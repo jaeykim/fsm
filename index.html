@@ -1,0 +1,84 @@
+<!DOCTYPE HTML>
+<html>
+	<head>
+	</head>
+	<body>
+		<script src="bundle.js"></script>
+		<script>
+			ect.include('/example.js', '/logic.js');
+			//ect.include('http://cdn.jsdelivr.net/jstat/latest/jstat.min.js');
+			//ect.include('/logic.js');
+			ect.load();
+		/*
+		function Account(deposit) {
+			var $0 = runtime.create(arguments);
+			$0.credit_count = 0;
+			this.makeCredit = function() {
+				$0.credit_count++;
+				return {
+					getDeposit: function() {
+						return $0.$arguments[0];
+					},
+					receive: function(money) {
+						var $1 = runtime.create(arguments);
+						$0.$arguments[0] += $1.$arguments[0];
+						return $0.$arguments[0];
+					}
+				}
+			}
+		}
+
+		var account1 = new Account(100);
+		var credit1 = account1.makeCredit();
+		var credit2 = account1.makeCredit();
+
+		var account2 = new Account(200);
+		var credit3 = account2.makeCredit();
+		var credit4 = account2.makeCredit();
+
+		console.log(credit1.getDeposit()); // 100
+		console.log(credit3.getDeposit()); // 200
+
+		credit1.receive(10);
+		credit4.receive(-10);
+
+		console.log(credit2.getDeposit()); // 110
+		console.log(credit3.getDeposit()); // 90
+
+		runtime.print();
+		*/
+		/*
+			function foo(deposit) {
+				// stateful
+				var $0 = runtime.create(arguments);
+				$0.account = new Object();
+				$0.account.change = function (c) {
+					// stateless
+					$1 = runtime.create(arguments);
+					$0.$arguments[0] += $1.$arguments[0];
+					//console.log("deposit: " + $0.$arguments[0]);
+				}
+				return $0.account.change;
+			}
+
+			var boo = function(a) {
+				var $2 = runtime.create(arguments);
+				$2.x = 10;
+				y = 10;
+
+				//console.log($$.$arguments[0] + 10);
+			}
+
+			var t0 = new Date().getTime();
+			var f = foo(100);
+			for (var i = 1; i < 3; i++) {
+				f(i);
+			}
+			var t1 = new Date().getTime();
+			console.log(t1 - t0);
+
+			runtime.print();
+			*/
+		</script>
+	</body>
+</html>
