@@ -6,6 +6,7 @@ module.exports = {
 	entry: {
 		fsm: './fsm.js'
 	},
+	//entry: ['babel-polyfill', './fsm.js'],
 	output: {
 		path: __dirname,
 		filename: 'fsm.js',
@@ -14,10 +15,13 @@ module.exports = {
 	},
 	plugins: [
 		new webpack.ProvidePlugin({
-			fsm: 'fsm'
+			fsm: 'fsm',
+			runtime: 'runtime',
+			$fsm: '$fsm'
 		}),
 		new webpack.DefinePlugin({
-			WEB: JSON.stringify(true)
+			WEB: JSON.stringify(true),
+			STATELESS: JSON.stringify(false)
 		})
 	],
 	externals:[{

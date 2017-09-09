@@ -1,0 +1,122 @@
+Starting webkit launcher, running against the built WebKit in /media/data/jwkwon/webkit/WebKit_hibernation/WebKitBuild/Release/lib...
+0
+closure1 changed
+createdObj[0][a] = "HELLO";
+createdObj[0][b] = window.oldObj;
+
+createdObj[1][arguments] = null;
+createdObj[1][caller] = null;
+createdObj[1][length] = 0;
+createdObj[1][name] = "";
+createdObj[1][prototype] = createdObj[2];
+
+createdObj[2][constructor] = createdObj[1];
+
+window[NaN] = NaN;
+window[closure1] = createdObj[1];
+window[newObj] = createdObj[0];
+
+window.oldObj[newProp] = createdObj[0];
+delete window.oldObj[deleteme];
+
+delete window.closure1;
+delete window.closure1.__getScopeObject__(0);
+delete window.closure1.prototype;
+window.Number[NaN] = NaN;
+
+
+JavaScript Engine timecheck finished
+Localized string "Undock into separate window." not found.
+Localized string "Dock to main window." not found.
+JavaScript Engine timecheck finished
+Localized string "All Panels" not found.
+Localized string "Go to the panel to the left/right" not found.
+Localized string "Go back/forward in panel history" not found.
+Localized string "Toggle console" not found.
+Localized string "Search" not found.
+Localized string "Search across all sources" not found.
+Localized string "Select node to inspect" not found.
+Localized string "Go to source" not found.
+Localized string "Go to line" not found.
+Localized string "Show keyboard shortcuts" not found.
+Localized string "or" not found.
+Localized string "Console" not found.
+Localized string "Elements Panel" not found.
+Localized string "Elements" not found.
+Localized string "Resources" not found.
+Localized string "Network" not found.
+Localized string "Sources" not found.
+Localized string "Timeline" not found.
+Localized string "Profiles" not found.
+Localized string "Audits" not found.
+Localized string "Navigate elements" not found.
+Localized string "Expand/collapse" not found.
+Localized string "Edit attribute" not found.
+Localized string "Hide element" not found.
+Localized string "Toggle edit as HTML" not found.
+Localized string "Styles Pane" not found.
+Localized string "Next/previous property" not found.
+Localized string "Increment value" not found.
+Localized string "Decrement value" not found.
+Localized string "Increment by %f" not found.
+Localized string "Decrement by %f" not found.
+Localized string "Sources Panel" not found.
+Localized string "Pause/Continue" not found.
+Localized string "Step over" not found.
+Localized string "Step into" not found.
+Localized string "Step out" not found.
+Localized string "Next/previous call frame" not found.
+Localized string "Evaluate selection in console" not found.
+Localized string "Go to member" not found.
+Localized string "Toggle breakpoint" not found.
+Localized string "Timeline Panel" not found.
+Localized string "Start/stop recording" not found.
+Localized string "Load timeline data" not found.
+Localized string "Clear console log." not found.
+Localized string "All" not found.
+Localized string "Errors" not found.
+Localized string "Warnings" not found.
+Localized string "Logs" not found.
+Localized string "Debug" not found.
+Localized string "Clear console" not found.
+Localized string "Autocomplete common prefix" not found.
+Localized string "Accept suggestion" not found.
+Localized string "Next/previous line" not found.
+Localized string "Execute command" not found.
+Localized string "Find" not found.
+Localized string "Filter" not found.
+Localized string "Search Previous" not found.
+Localized string "Search Next" not found.
+Localized string "Replace" not found.
+Localized string "Previous" not found.
+Localized string "Replace All" not found.
+Localized string "Cancel" not found.
+Localized string "Select an element in the page to inspect it." not found.
+Localized string "Settings" not found.
+Localized string "DOM Breakpoints" not found.
+Localized string "No Breakpoints" not found.
+Localized string "Subtree Modified" not found.
+Localized string "Attribute Modified" not found.
+Localized string "Node Removed" not found.
+Localized string "Subtree Modifications" not found.
+Localized string "Attributes Modifications" not found.
+Localized string "Node Removal" not found.
+Localized string "a panel chosen automatically" not found.
+Localized string "Show console." not found.
+Localized string "Computed Style" not found.
+Localized string "Show inherited" not found.
+Localized string "Styles" not found.
+Localized string "As Authored" not found.
+Localized string "Hex Colors" not found.
+Localized string "RGB Colors" not found.
+Localized string "HSL Colors" not found.
+Localized string "Toggle Element State" not found.
+Localized string "New Style Rule" not found.
+Localized string "α:" not found.
+Localized string "Metrics" not found.
+Localized string "Properties" not found.
+Localized string "Event Listeners" not found.
+Localized string "All Nodes" not found.
+Localized string "Selected Node Only" not found.
+Localized string "Matched CSS Rules" not found.
+Localized string "user agent stylesheet" not found.

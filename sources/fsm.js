@@ -1,94 +1,140 @@
-console.log('WEB: ' + WEB);
+//Send the proper header information along with the request
+/*
+var http = new XMLHttpRequest();
+var url = 'http://aiur.snu.ac.kr:3001';
+var params = "lorem=ipsum&name=binny";
+http.open("POST", url, true);
+http.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
 
-if (!WEB) {
-	XMLHttpRequest = require('xmlhttprequest').XMLHttpRequest;
-	FileAPI = require('file-api');
-	FileReader = FileAPI.FileReader;
-	File = FileAPI.File;
+http.onreadystatechange = function() {//Call a function when the state changes.
+	if(http.readyState == 4 && http.status == 200) {
+		alert(http.responseText);
+	}
 }
-var debug = require('./debug.js');
-var instUtil = require('./instUtil.js');
+http.send(params);
+*/
 
-var scope = (function() {
-	return function() {
-		var runtime = require('./runtime.js');
+//$fsm0 = fsm.create();
+
+var esprima = require('frameworks/esprima.js');
+var estraverse = require('frameworks/estraverse.browser.js');
+
+var fsm = (function() {
+	var ref_table = new Array();
+	//var call_stack = new Array();
+	//call_stack.push(new Object()); // global object
+	Object.prototype.$ref_table = ref_table;
+	var ref_index = 0;
+
+	return {
+		create: function(args) {
+			//var symbol = Symbol(desc);
+			var obj = new Object();
+			if (args) {
+				obj.$arguments = new Array();
+				for (var arg in args) {
+					obj.$arguments[arg] = args[arg];
+				}
+			}
+			//obj.key = ref_index;
+			ref_table[ref_index] = obj;
+			return ref_table[ref_index++];
+		},
+		get: function(key) {
+			return ref_table[key];
+		},
+		print: function() {
+			// Only for debug
+			console.log("print");
+			//var symbols = Object.getOwnPropertySymbols(ref_table);
+			//for (var i = 0; i < symbols.length; i++) {
+			//	console.log(symbols[i], ref_table[symbols[i]]);
+			//}
+
+			for (var i = 0; i < ref_table.length; i++) {
+				console.log('ref_table[' + i + ']');
+				for (var key in ref_table) {
+					console.log(key, ref_table[key]);
+				}
+			}
+		},
+		replace: function(rft) {
+			ref_table = JSON.parse(JSON.stringify(rft));
+		},
+		serialize: function() {
+			var t0 = new Date().getTime();
+			//var ser = JSON.stringify(ref_table);
+			var ser = JSONfn.stringify(ref_table);
+			//var dom = JsonML.fromHTML(document);
+			console.log('serialize time: ' + (new Date().getTime() - t0));
+			console.log(ser);
+			// ADD ME: Symbol object serialization requires a special implementation
+		}
 	};
 })();
 
-var fsm = {
-	queue: [],
-	sources: [],
-	addSource: function(source) {
-		this.sources.push(source);
-	},
-	parse: function () {
-		// OPT ME: revise regex to cover '//...'
-		var regex = new RegExp("^(http|https)://", "i");
-		var reader = new FileReader();
-		var indirectEval = eval;
-		//console.log("queue: " + this.queue);
-		if (this.queue.length == 0) return;
-		var source = this.queue[0];
-		this.queue.shift();
-		//console.log(source);
+(function (exports) {
+"use strict";
 
-		if (!WEB) {
-			reader.onload = function(e) {
-				//console.log(e.target.result);
-				//fsm.addSource(e.target.result);
-				var code = instUtil.traceInstrument(e.target.result);
-				console.log(code);
-				with (scope) {
-					//eval(code);
-				}
-				//indirectEval(code);
-				debug.now("timestamp[" + source + "]");
-				fsm.parse();
-			}
-		}
-		var isWebSource = WEB ? true : regex.test(source);
-		if (isWebSource) {
-			var req = new XMLHttpRequest();
-			req.open("GET", source, false);
-			req.onreadystatechange = function() {
-				if (req.readyState == 4 && req.status == 200) {
-					//console.log(req.responseText);
-					//fsm.addSource(req.responseText);
-					var code = instUtil.traceInstrument(req.responseText);
-					console.log(code);
-					with (scope) {
-						//eval(code);
-					}
-					//indirectEval(code);
-					debug.now("timestamp[" + source + "]");
-					fsm.parse();
-				}
-			}
-			req.send();
-		} else {
-			reader.readAsText(new File({path: source}));
-		}
-	},
-	include: function() {
-		//console.log("include " + source);
-		for (var i = 0; i < arguments.length; i++) {
-			if (arguments[i]) this.queue.push(arguments[i]);
-		}
-		//this.queue.push(source);
-	},
-	load: function() {
-		debug.now("timestamp loaded");
-		this.parse();
-		debug.now("timestamp finish");
-	},
-	print: function() {
-		for (source in this.sources) {
-			console.log(source);
-		}
-	}
-}
+  exports.stringify = function (obj) {
 
-module.exports = fsm;
+    return JSON.stringify(obj, function (key, value) {
+      var fnBody;
+      if (value instanceof Function || typeof value == 'function') {
 
-//module.exports.include = fsm.include;
-//module.exports.load = fsm.load;
+	// Inject scope Objects
+	var ast = esprima.parse(obj);
+	console.log(ast);
+
+        fnBody = value.toString();
+
+        if (fnBody.length < 8 || fnBody.substring(0, 8) !== 'function') { //this is ES6 Arrow Function
+          return '_NuFrRa_' + fnBody;
+        }
+        return fnBody;
+      }
+      if (value instanceof RegExp) {
+        return '_PxEgEr_' + value;
+      }
+      return value;
+    });
+  };
+
+  exports.parse = function (str, date2obj) {
+
+    var iso8061 = date2obj ? /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2}(?:\.\d*)?)Z$/ : false;
+
+    return JSON.parse(str, function (key, value) {
+      var prefix;
+
+      if (typeof value != 'string') {
+        return value;
+      }
+      if (value.length < 8) {
+        return value;
+      }
+
+      prefix = value.substring(0, 8);
+
+      if (iso8061 && value.match(iso8061)) {
+        return new Date(value);
+      }
+      if (prefix === 'function') {
+        return eval('(' + value + ')');
+      }
+      if (prefix === '_PxEgEr_') {
+        return eval(value.slice(8));
+      }
+      if (prefix === '_NuFrRa_') {
+        return eval(value.slice(8));
+      }
+
+      return value;
+    });
+  };
+
+  exports.clone = function (obj, date2obj) {
+    return exports.parse(exports.stringify(obj), date2obj);
+  };
+
+}(typeof exports === 'undefined' ? (window.JSONfn = {}) : exports));
