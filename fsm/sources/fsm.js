@@ -63,17 +63,55 @@ var $fsm = (function() {
 		serialize: function() {
 			var t0 = new Date().getTime();
 			//var ser = JSON.stringify(ref_table);
-			var ser = JSONfn.stringify(ref_table);
+			//var ser = JSONfn.stringify(ref_table);
 			//var dom = JsonML.fromHTML(document);
+			
+			// [runtime] serialize by Yoo Hyeongseok, 2017.09.26
+			var code = '';
+			
+			for( var i = 0 ; i < 1 /*ref_table.length*/ ; i++ ) {
+				// about ref_table[i]
+				for( var key in ref_table[i] ) {
+					var value;
+					if( ref_table[i][key] instanceof Function || typeof ref_table[i][key] == 'function' ){
+						value = ref_table[i][key].toString();
+					}
+					else {
+						var value = JSON.stringify( ref_table[i][key] );
+					}
+			
+					// if $scope_obj defined, it is instanceof Object
+					if( ref_table[i][key].$scope_obj instanceof Object || typeof ref_table[i][key].$scope_obj == 'object'  ) {
+						// has scope chain
+						for ( var fsm in ref_table[i][key].$scope_obj ) {
+							var refLine = 'var ' + fsm + ' = ref_table[' + ref_table[i][key].$scope_obj[fsm] + '];';
+							var insertInd = value.indexOf('{') + 1;
+							var indent = '';
+							var indentCur = insertInd;
+							// auto indent
+							while( value[indentCur] == '\n' || value[indentCur] == '\t' || value[indentCur] == ' ' ){
+								indent += value[indentCur];
+								indentCur++;
+							}
+							value = value.slice(0, insertInd) + indent + refLine + value.slice(insertInd);
+						}
+					}
+			
+					code += '$fsm' + i + "." + key + " = " + value + ';\n';
+				}
+			}
+
 			console.log('serialize time: ' + (new Date().getTime() - t0));
-			console.log(ser);
-			// ADD ME: Symbol object serialization requires a special implementation
+			console.log(code);
+
+			return code;
 		},
 		ref_table: ref_table
 	};
 })();
 
 var $fsm0 = $fsm.create();
+
 
 var JSONfn = new Object();
 (function (exports) {
