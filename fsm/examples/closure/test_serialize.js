@@ -1,6 +1,6 @@
 var fs = require('fs');
 
-/* Test case #1
+// Test case #1
 var ref_table = new Array();
 ref_table.push( new Object() );
 ref_table.push( new Object() );
@@ -17,27 +17,6 @@ $fsm0.foo = function() {
 	$fsm1.boo.$scope_obj = new Object();
 	$fsm1.boo.$scope_obj.$fsm1 = 1;
 	return $fsm1.boo;
-};
-$fsm0.f = $fsm0.foo();
-*/
-
-var ref_table = new Array();
-ref_table.push( new Object() );
-ref_table.push( new Object() );
-ref_table.push( new Object() );
-
-var $fsm0 = ref_table[0];
-$fsm0.foo = function() {
-  var $fsm1 = ref_table[1];
-  $fsm1.closure= new Object();  $fsm1.foo = function(){
-    var $fsm2 = ref_table[2];
-    $fsm1.closure.a++;
-    $fsm2.foo = function(){
-      console.log('halo\n');
-    }
-    return fsm2.foo;
-  }
-	return $fsm1.foo;
 };
 $fsm0.f = $fsm0.foo();
 
