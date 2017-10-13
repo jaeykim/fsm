@@ -1,0 +1,15 @@
+var node_0 = document.createElement( "meta" );
+node_0.setAttribute( "charset", "UTF-8" ) ;
+document.head.appendChild( node_0 );
+var node_1 = document.createElement( "title" );
+var node_2 = document.createTextNode( "Closure test" );
+node_1.appendChild( node_2 );
+document.head.appendChild( node_1 );
+var node_3 = document.createElement( "div" );
+document.body.appendChild( node_3 );
+var node_4 = document.createElement( "script" );
+node_4.setAttribute( "src", "fsm.js" ) ;
+document.body.appendChild( node_4 );
+var node_5 = document.createElement( "script" );
+node_5.setAttribute( "src", "inst/index.js" ) ;
+document.body.appendChild( node_5 );

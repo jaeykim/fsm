@@ -1,0 +1,20 @@
+var node_0 = document.createElement( "title" );
+node_0.setAttribute( "id", "title" ) ;
+var node_1 = document.createTextNode( "Hello world app" );
+node_0.appendChild( node_1 );
+document.head.appendChild( node_0 );
+var node_2 = document.createElement( "h1" );
+var node_3 = document.createTextNode( "HEAD LINE" );
+node_2.appendChild( node_3 );
+document.body.appendChild( node_2 );
+var node_4 = document.createElement( "p" );
+var node_5 = document.createTextNode( "1. this is for 'br' test\n2. it's really hard bro.\n3. last line." );
+node_4.appendChild( node_5 );
+document.body.appendChild( node_4 );
+var node_6 = document.createElement( "script" );
+node_6.setAttribute( "src", "index.js" ) ;
+var node_7 = document.createTextNode( "
+			console.log('test\n');
+		" );
+node_6.appendChild( node_7 );
+document.body.appendChild( node_6 );

@@ -2,13 +2,23 @@ var XMLHttpRequest = require('xmlhttprequest').XMLHttpRequest;
 var htmlparser = require('htmlparser');
 var fs = require('fs');
 
+console.log( process.argv.length );
+
+var fin = './index_0.html';
 // Read raw HTML file to text
-var rawHTML = fs.readFileSync('./index_0.html', 'utf8');
+if (  process.argv.length > 2 ) {
+	fin = process.argv[2];
+}
+var rawHTML = fs.readFileSync(fin, 'utf8');
+
 
 // remove whitespace
 // ref : https://stackoverflow.com/questions/12014441/remove-every-white-space-between-tags-using-javascript
 rawHTML = rawHTML.replace(/(<(pre|script|style|textarea)[^]+?<\/\2)|(^|>)\s+|\s+(?=<|$)/g, '$1$3');
-//console.log(rawHTML)
+rawHTML = rawHTML.replace(/<br>/gi, '\\n');
+console.log('---------------------------------');
+console.log(rawHTML)
+console.log('---------------------------------');
 
 // HTML to DOM  using htmlparser
 // npm install htmlparser
@@ -17,36 +27,121 @@ var handler = new htmlparser.DefaultHandler(function (error, dom) {
 	if (error){
 		console.log('ERROR : html handler');
 	} else {
-		console.log('# Try to parse file..');
+		console.log('# Success to parse HTML file!');
 	}
 });
 var time_end = new Date().getTime();
-console.log( "# time for execution : " + (time_end - time_start) + 'ms' );
 var parser = new htmlparser.Parser(handler);
 parser.parseComplete(rawHTML);
+console.log( "# time for execution : " + (time_end - time_start) + 'ms' );
+
 var domObj = handler.dom;
-//console.log(domObj);
+var htmlObj = getHtmlObj(domObj);
+var headObj = htmlObj.children[0]; // CHECK : is <head> fixed in 0??
+var bodyObj = htmlObj.children[1]; // CHECK : is <body> fixed in 1??
+//console.log(headObj);
+//console.log(bodyObj);
+
+/// document.head setting..
+var glob_cnt = 0;
+var headscript = domTreeTraversal_171010( 'document', headObj);
+var bodyscript = domTreeTraversal_171010( 'document', bodyObj);
+console.log("---------------------- OUTPUT ----------------------------");
+console.log(headscript);
+console.log(bodyscript);
+
+var save_dir = './domtree/';
+var source   = fin.substring(0, fin.lastIndexOf('.')) + '.js';
+
+if (!fs.existsSync(save_dir)) {
+	fs.mkdirSync(save_dir);
+}
+
+fs.writeFile(save_dir + source, headscript + bodyscript, function(err) {
+  return console.error(err);
+});
 
 
-// $fsm0.dom = domObj;
-var outputScript = domTreeTraversal( '', domObj);
-console.log( outputScript );
+
+
+/** 
+ * getHtmlObj
+*/
+function getHtmlObj(domObj){
+	for( ind in domObj ){
+		if( domObj[ind].name == 'html' )
+			return domObj[ind];
+	}
+}
+
+/**
+ * DOM Tree traversal _ update_171010
+ * @author goodseog
+ *  
+ * @param parent current node's parent in string type such as 'document', 'document.html'
+ * @param tree   current node's child tree, parent.current_node = [{child1},{child2},...]
+ * 
+ * @return 		 instrumentation log.
+ */ 
+
+function domTreeTraversal_171010(parent, node){
+	var dtt = {
+		// 1. var elem = document.createElement(node)
+		createElement : function(){
+			return 'var ' + this.elemName +  ' = document.createElement( \"' + node.name   + '\" );\n';
+		}, 
+		createTextNode : function(){
+			return 'var ' + this.elemName +  ' = document.createTextNode( \"' + node.data + '\" );\n';
+		},
+		createBRtag : function(){
+			return 'var ' + this.elemName +  ' = document.createTextNode( \"\\n\" );\n';
+		},
+		// 2. elem.setAttribute(name, value)
+		setAttribs : function(){
+			ret = '';
+			if( node.attribs != undefined ){
+				for(var key in node.attribs){
+					ret += ( this.elemName + '.setAttribute( \"' + key + '\", \"' + node.attribs[key] + '\" ) ;\n');
+				}
+			}
+			return ret;
+		},
+		// 3. elem.appendChild(childnode);
+		appendChildtoNode: function(){
+			var ret = '';
+			for( var key in node.children ){
+				ret += domTreeTraversal_171010(this.elemName, node.children[key]);
+			}
+			return ret;
+		},
+		appendChildtoParent: function(){
+			return parent + '.appendChild( ' + this.elemName + ' );\n';
+		}
+	}
+	
+	var script = '';
+	if( parent == 'document' ){
+		dtt.elemName = parent + '.' + node.name;
+		script += dtt.setAttribs();
+		script += dtt.appendChildtoNode();
+	} else {
+		dtt.elemName = 'node_' + glob_cnt++;
+		if( node.type == 'text' ) {
+			script += dtt.createTextNode();
+			script += dtt.appendChildtoParent();
+		} else {
+			script += dtt.createElement();
+			script += dtt.setAttribs();
+			script += dtt.appendChildtoNode();
+			script += dtt.appendChildtoParent();
+		}
+	}
+	return script;
+}
 
 
 /**
- * Determine whether a node's text content is entirely whitespace.
- *
- * @param nod  A node implementing the |CharacterData| interface (i.e.,
- *             a |Text|, |Comment|, or |CDATASection| node
- * @return     True if all of the text content of |nod| is whitespace,
- *             otherwise false.
- */
-function is_all_ws( nod ) {
-	// Use ECMA-262 Edition 3 String and RegExp features
-	return !(/[^\t\n\r ]/.test(nod));
-  }
-
-/**
+ * @deprecated 
  * DOM Tree traversal
  * @author goodseog
  *  
@@ -55,41 +150,38 @@ function is_all_ws( nod ) {
  * 
  * @return 		 instrumentation log.
  */ 
-function domTreeTraversal(parent, tree){
-	var log = '';
-	for( var index in tree ){
-		var childVal = tree[index];
-		var childKey = parent + '.' + childVal.name;
-		// console.log( childKey , '=>\n', childVal );
 
-		// Setting atttribs
-		if( childVal.attribs != undefined ){
-			for(var key in childVal.attribs){
-				log += (childKey + '.' + key + ' = ' + childVal.attribs[key] + '\n');
-			}
-		}
+// function domTreeTraversal(parent, tree){
+// 	var log = '';
+// 	for( var index in tree ){
+// 		var childVal = tree[index];
+// 		var childKey = parent + '.' + childVal.name;
+// 		// console.log( childKey , '=>\n', childVal );
+
+// 		// Setting atttribs
+// 		if( childVal.attribs != undefined ){
+// 			for(var key in childVal.attribs){
+// 				log += (childKey + '.' + key + ' = \"' + childVal.attribs[key] + '\"\n');
+// 			}
+// 		}
 		
-		if (childVal.type == 'tag' ){
-			if (childVal.name == 'html'){
-				log += domTreeTraversal( '$fsm0.dom' , childVal['children'] );
-			} else if (childVal.name == 'br') {
-				log += (parent + '.text' + ' += \"\\n\"\n');
-			} else {
-				log += domTreeTraversal( childKey , childVal['children'] );
-			}			
-		} else if (childVal.type == 'script'){
-			log += domTreeTraversal( childKey , childVal['children'] );
-		} else if (childVal.type == 'text') {
-			if( !is_all_ws(childVal.data) ) {
-				log += (parent + '.' + childVal.type + ' += \"' + childVal.data + '\"\n');
-			}
-		} else if (childVal.type == 'directive'){
-			continue;
-		} else {
-			console.log( "#########################" );
-			console.log( "DEBUG : new childVal type appeared!");
-			console.log( childKey , '=>\n', childVal );	
-		}
-	}
-	return log;
-}
+// 		if (childVal.type == 'tag' ){
+// 			if (childVal.name == 'html'){
+// 				log += domTreeTraversal( '$fsm0.dom' , childVal['children'] );
+// 			} else {
+// 				log += domTreeTraversal( childKey , childVal['children'] );
+// 			}			
+// 		} else if (childVal.type == 'script'){
+// 			log += domTreeTraversal( childKey , childVal['children'] );
+// 		} else if (childVal.type == 'text') {
+// 			log += (parent + '.' + childVal.type + ' = \"' + childVal.data + '\"\n');
+// 		} else if (childVal.type == 'directive'){
+// 			continue;
+// 		} else {
+// 			console.log( "#########################" );
+// 			console.log( "DEBUG : new childVal type appeared!");
+// 			console.log( childKey , '=>\n', childVal );	
+// 		}
+// 	}
+// 	return log;
+// }
