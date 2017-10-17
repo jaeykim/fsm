@@ -7,7 +7,7 @@ ref_table.push( new Object() );
 
 var $fsm0 = ref_table[0];
 $fsm0.foo = function() {
-	var $fsm1 = ref_table[1];
+	var $fsm1 = new Object();
 	$fsm1.closure = new Object();
 	$fsm1.closure.a = 10;
 	$fsm1.boo = function(){
@@ -43,6 +43,7 @@ for( var i = 0 ; i < 1 /*ref_table.length*/ ; i++ ) {
 
     // if $scope_obj defined, it is instanceof Object
     if( ref_table[i][key].$scope_obj instanceof Object || typeof ref_table[i][key].$scope_obj == 'object'  ) {
+      console.log( "DEBUG : " + key );
       // has scope chain
       for ( var fsm in ref_table[i][key].$scope_obj ) {
         var refLine = 'var ' + fsm + ' = ref_table[' + ref_table[i][key].$scope_obj[fsm] + '];';
