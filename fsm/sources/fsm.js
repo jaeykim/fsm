@@ -106,6 +106,12 @@ var $fsm = (function() {
 
 			return code;
 		},
+		includes : function (func_str) {
+			// $fsm.includes(func) for [instrumentation] Event Handler, 2017-10-18 updated.
+			// if event function is in $fsm0, it has to change func to $fsm0.func.
+			var func_name = func_str.substring(0, func_str.indexOf("(")).trim();
+			return func_name in ref_table[0];
+		},
 		ref_table: ref_table
 	};
 })();

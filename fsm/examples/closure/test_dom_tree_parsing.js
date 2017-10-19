@@ -85,7 +85,6 @@ function getHtmlObj(domObj){
 
 function domTreeTraversal_171010(parent, node){
 	var dtt = {
-
 		// 1. var elem = document.createElement(node)
 		createElement : function(){
 			return "var " + this.elemName +  " = document.createElement( \"" + node.name   + "\" );\n";
@@ -106,9 +105,7 @@ function domTreeTraversal_171010(parent, node){
 						// elemName.addEventListener( "click", $fsm0.func(or global function) );
 						// Note: Do not use the "on" prefix. For example, use "click" instead of "onclick".
 						// {this.elemName}.addEventListener( {event.removeOn()}, { fsm.includes(func) ? "$fsm0." + func : func });
-						ret += ( this.elemName + ".addEventListener( \"" + key.substr(2) + "\", function () { " /* + $fsm.includes(node.attribs[key])*/ + node.attribs[key] + " } ); \n" );	
-						// EXCEPTION FOUND : <button onclick="getElementById('demo').innerHTML = Date()">What is the time?</button>
-						// I think we just use $fsm.include( function )..
+						ret += ( this.elemName + ".addEventListener( \"" + key.substr(2) + "\", function () { " /* + $fsm.includes(node.attribs[key]) ? '$fsm0.' : '' ) */ + node.attribs[key] + " } ); \n" );
 					} else {
 						ret += ( this.elemName + ".setAttribute( \"" + key + "\", \"" + node.attribs[key] + "\" ) ;\n");
 					}

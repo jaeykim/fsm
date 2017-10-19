@@ -25,4 +25,4 @@ window.onload = function () {
 	var node_11 = document.createTextNode( "CLICK!" );
 	node_10.appendChild( node_11 );
 	document.body.appendChild( node_10 );
-	};
+	}
