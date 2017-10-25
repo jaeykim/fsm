@@ -66,51 +66,140 @@ var $fsm = (function() {
 			//var ser = JSONfn.stringify(ref_table);
 			//var dom = JsonML.fromHTML(document);
 			
-			// [runtime] serialize by Yoo Hyeongseok, 2017.09.26
+			// [runtime] serialize HTML to DOM by Yoo Hyeongseok 2017.10.24
+			var rawHTML = new XMLSerializer().serializeToString(document);
+			rawHTML = rawHTML.replace(/(<(pre|script|style|textarea)[^]+?<\/\2)|(^|>)\s+|\s+(?=<|$)/g, "$1$3");
+			var handler = new htmlparser.DefaultHandler(function (error, dom) {
+				if (error) console.log("ERROR : html handler");
+				else       console.log("# Success to parse HTML file!");
+			});
+			require('htmlparser').Parser(handler).parseComplete(rawHTML);
+			ref_table[0].dom = handler.dom;
+
+
+			// [runtime] serialize js code by Yoo Hyeongseok, 2017.09.26
 			var code = '';
-			
-			for( var i = 0 ; i < 1 /*ref_table.length*/ ; i++ ) {
-				// about ref_table[i]
-				for( var key in ref_table[i] ) {
-					var value;
-					if( ref_table[i][key] instanceof Function || typeof ref_table[i][key] == 'function' ){
-						value = ref_table[i][key].toString();
-					}
-					else {
-						var value = JSON.stringify( ref_table[i][key] );
-					}
-			
-					// if $scope_obj defined, it is instanceof Object
-					if( ref_table[i][key].$scope_obj instanceof Object || typeof ref_table[i][key].$scope_obj == 'object'  ) {
-						// has scope chain
-						for ( var fsm in ref_table[i][key].$scope_obj ) {
-							var refLine = 'var ' + fsm + ' = ref_table[' + ref_table[i][key].$scope_obj[fsm] + '];';
-							var insertInd = value.indexOf('{') + 1;
-							var indent = '';
-							var indentCur = insertInd;
-							// auto indent
-							while( value[indentCur] == '\n' || value[indentCur] == '\t' || value[indentCur] == ' ' ){
-								indent += value[indentCur];
-								indentCur++;
-							}
-							value = value.slice(0, insertInd) + indent + refLine + value.slice(insertInd);
-						}
-					}
-			
-					code += '$fsm' + i + "." + key + " = " + value + ';\n';
+			for( var key in ref_table[0] ) {
+				var value;
+				if( ref_table[i][key] instanceof Function || typeof ref_table[i][key] == 'function' ){
+					value = ref_table[i][key].toString();
 				}
+				else {
+					var value = JSON.stringify( ref_table[i][key] );
+				}
+		
+				// if $scope_obj defined, it is instanceof Object
+				if( ref_table[i][key].$scope_obj instanceof Object || typeof ref_table[i][key].$scope_obj == 'object'  ) {
+					// has scope chain
+					for ( var fsm in ref_table[i][key].$scope_obj ) {
+						var refLine = 'var ' + fsm + ' = ref_table[' + ref_table[i][key].$scope_obj[fsm] + '];';
+						var insertInd = value.indexOf('{') + 1;
+						var indent = '';
+						var indentCur = insertInd;
+						// auto indent
+						while( value[indentCur] == '\n' || value[indentCur] == '\t' || value[indentCur] == ' ' ){
+							indent += value[indentCur];
+							indentCur++;
+						}
+						value = value.slice(0, insertInd) + indent + refLine + value.slice(insertInd);
+					}
+				}
+		
+				code += '$fsm' + i + "." + key + " = " + value + ';\n';
 			}
+			code += "\n\n";
+
+			// [runtime] DOM tree recover code by Yoo Hyeongseok 2017.10.25
+			code += "// DOM TREE RENDERING SOURCE \n";
+			code += this.restoreDOM(ref_table[0].dom);
+
+
 
 			console.log('serialize time: ' + (new Date().getTime() - t0));
 			console.log(code);
-
 			return code;
 		},
-		includes : function (func_str) {
-			// $fsm.includes(func) for [instrumentation] Event Handler, 2017-10-18 updated.
-			// if event function is in $fsm0, it has to change func to $fsm0.func.
-			var func_name = func_str.substring(0, func_str.indexOf("(")).trim();
+		includes : function (func_name) {
+			// $fsm.includes(func) for [instrumentation] Event Handler, 2017-10-23 updated.
 			return func_name in ref_table[0];
+		},
+		restoreDOM : function (domObj){
+			// [runtime] DOM tree recover code by Yoo Hyeongseok 2017.10.25
+			var htmlObj = getHtmlObj(domObj);
+			var headObj = htmlObj.children[0];
+			var bodyObj = htmlObj.children[1];
+			
+			var glob_cnt = 0;
+			var headscript = domTreeTraversal("document", headObj);
+			var bodyscript = domTreeTraversal("document", bodyObj);
+			
+			var script = ("window.onload = function () { \n\t" + headscript + bodyscript +	"};");
+			return script;
+			
+			function getHtmlObj(domObj){
+				for( ind in domObj ){
+					if( domObj[ind].name == "html" )
+						return domObj[ind];
+				}
+			}
+			
+			function domTreeTraversal(parent, node){
+				var dtt = {
+					createElement : function(){
+						return "var " + this.elemName +  " = document.createElement("  + JSON.stringify(node.name) + " );\n\t";
+					}, 
+					createTextNode : function(){
+						return "var " + this.elemName +  " = document.createTextNode(" + JSON.stringify(node.data) + ");\n\t";
+					},
+					setAttribs : function(){
+						ret = "";
+						if( node.attribs != undefined ){
+							for(var key in node.attribs){
+								if( HtmlDomEvents.includes( key ) ){
+									ret += ( this.elemName + ".addEventListener(" + JSON.stringify(key.substr(2)) + ", function () {\n\t" +
+										"\tvar func = " + JSON.stringify(node.attribs[key]) + ";\n\t"+
+										"\tvar func_name = func.substr( 0, func.indexOf(\"(\")).trim();\n\t" + 
+										"\tvar fsm = $fsm.includes( func_name ) ? \"$fsm0.\"  : \"\"\n\t" +
+										"\teval( fsm + func ) \n\t" + 
+										"}); \n\t" );
+								} else {
+									ret += ( this.elemName + ".setAttribute(" + JSON.stringify(key) + ", " + JSON.stringify(node.attribs[key]) + ") ;\n\t");
+								}
+							}
+						}
+						return ret;
+					},
+					appendChildtoNode: function(){
+						var ret = "";
+						for( var key in node.children ){
+							ret += domTreeTraversal(this.elemName, node.children[key]);
+						}
+						return ret;
+					},
+					appendChildtoParent: function(){
+						return parent + ".appendChild( " + this.elemName + " );\n\t";
+					}
+				}
+				
+				var script = "";
+				if( parent == "document" ){
+					dtt.elemName = parent + "." + node.name;
+					script += dtt.setAttribs();
+					script += dtt.appendChildtoNode();
+				} else {
+					dtt.elemName = "node_" + glob_cnt++;
+					if( node.type == "text" ) {
+						script += dtt.createTextNode();
+						script += dtt.appendChildtoParent();
+					} else {
+						script += dtt.createElement();
+						script += dtt.setAttribs();
+						script += dtt.appendChildtoNode();
+						script += dtt.appendChildtoParent();
+					}
+				}
+				return script;
+			}
 		},
 		ref_table: ref_table
 	};
