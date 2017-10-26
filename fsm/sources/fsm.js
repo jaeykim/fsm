@@ -65,17 +65,6 @@ var $fsm = (function() {
 			//var ser = JSON.stringify(ref_table);
 			//var ser = JSONfn.stringify(ref_table);
 			//var dom = JsonML.fromHTML(document);
-			
-			// [runtime] serialize HTML to DOM by Yoo Hyeongseok 2017.10.24
-			var rawHTML = new XMLSerializer().serializeToString(document);
-			rawHTML = rawHTML.replace(/(<(pre|script|style|textarea)[^]+?<\/\2)|(^|>)\s+|\s+(?=<|$)/g, "$1$3");
-			var handler = new htmlparser.DefaultHandler(function (error, dom) {
-				if (error) console.log("ERROR : html handler");
-				else       console.log("# Success to parse HTML file!");
-			});
-			require('htmlparser').Parser(handler).parseComplete(rawHTML);
-			ref_table[0].dom = handler.dom;
-
 
 			// [runtime] serialize js code by Yoo Hyeongseok, 2017.09.26
 			var code = '';
