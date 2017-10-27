@@ -19,6 +19,7 @@ http.send(params);
 //var estraverse = require('./frameworks/estraverse.browser.js');
 
 var $fsm = (function() {
+	var dom;
 	var ref_table = new Array();
 	//var call_stack = new Array();
 	//call_stack.push(new Object()); // global object
@@ -66,102 +67,123 @@ var $fsm = (function() {
 			//var ser = JSONfn.stringify(ref_table);
 			//var dom = JsonML.fromHTML(document);
 
-			// [runtime] serialize js code by Yoo Hyeongseok, 2017.09.26
 			var code = '';
-			for( var key in ref_table[0] ) {
-				var value;
-				if( ref_table[i][key] instanceof Function || typeof ref_table[i][key] == 'function' ){
-					value = ref_table[i][key].toString();
-				}
-				else {
-					var value = JSON.stringify( ref_table[i][key] );
-				}
-		
-				// if $scope_obj defined, it is instanceof Object
-				if( ref_table[i][key].$scope_obj instanceof Object || typeof ref_table[i][key].$scope_obj == 'object'  ) {
-					// has scope chain
-					for ( var fsm in ref_table[i][key].$scope_obj ) {
-						var refLine = 'var ' + fsm + ' = ref_table[' + ref_table[i][key].$scope_obj[fsm] + '];';
-						var insertInd = value.indexOf('{') + 1;
-						var indent = '';
-						var indentCur = insertInd;
-						// auto indent
-						while( value[indentCur] == '\n' || value[indentCur] == '\t' || value[indentCur] == ' ' ){
-							indent += value[indentCur];
-							indentCur++;
-						}
-						value = value.slice(0, insertInd) + indent + refLine + value.slice(insertInd);
-					}
-				}
-		
-				code += '$fsm' + i + "." + key + " = " + value + ';\n';
-			}
-			code += "\n\n";
 
 			// [runtime] DOM tree recover code by Yoo Hyeongseok 2017.10.25
-			code += "// DOM TREE RENDERING SOURCE \n";
-			code += this.restoreDOM(ref_table[0].dom);
+			code += "var rawHTML = " + JSON.stringify(this.dom.documentElement.outerHTML) + "\n";
+			code += "$fsm.dom = new DOMParser().parseFromString(rawHTML, \"text/html\"); \n"
+			code += "$fsm.restoreDOM();\n";
+			code += "\n\n";
 
-
+			// [runtime] serialize js code by Yoo Hyeongseok, 2017.09.26
+			for( var i = 0 ; i < 1 ; i++ ){
+				for( var key in ref_table[i] ) {
+					var value;
+					if( ref_table[i][key] instanceof Function || typeof ref_table[i][key] == 'function' ){
+						value = ref_table[i][key].toString();
+					}
+					else {
+						var value = JSON.stringify( ref_table[i][key] );
+					}
+			
+					// if $scope_obj defined, it is instanceof Object
+					if( ref_table[i][key].$scope_obj instanceof Object || typeof ref_table[i][key].$scope_obj == 'object'  ) {
+						// has scope chain
+						for ( var fsm in ref_table[i][key].$scope_obj ) {
+							var refLine = 'var ' + fsm + ' = ref_table[' + ref_table[i][key].$scope_obj[fsm] + '];';
+							var insertInd = value.indexOf('{') + 1;
+							var indent = '';
+							var indentCur = insertInd;
+							// auto indent
+							while( value[indentCur] == '\n' || value[indentCur] == '\t' || value[indentCur] == ' ' ){
+								indent += value[indentCur];
+								indentCur++;
+							}
+							value = value.slice(0, insertInd) + indent + refLine + value.slice(insertInd);
+						}
+					}
+			
+					code += '$fsm' + i + "." + key + " = " + value + ';\n';
+				}
+			}
 
 			console.log('serialize time: ' + (new Date().getTime() - t0));
-			console.log(code);
+			//console.log(code);
 			return code;
 		},
 		includes : function (func_name) {
 			// $fsm.includes(func) for [instrumentation] Event Handler, 2017-10-23 updated.
 			return func_name in ref_table[0];
 		},
-		restoreDOM : function (domObj){
+		restoreDOM : function(){
 			// [runtime] DOM tree recover code by Yoo Hyeongseok 2017.10.25
-			var htmlObj = getHtmlObj(domObj);
-			var headObj = htmlObj.children[0];
-			var bodyObj = htmlObj.children[1];
-			
+			var headObj = this.dom.documentElement.childNodes[0];
+			var bodyObj = this.dom.documentElement.childNodes[1];
+
 			var glob_cnt = 0;
-			var headscript = domTreeTraversal("document", headObj);
-			var bodyscript = domTreeTraversal("document", bodyObj);
-			
-			var script = ("window.onload = function () { \n\t" + headscript + bodyscript +	"};");
+			var appendChildScript = "";
+			var eventScript = 
+				"var serialize = document.createElement(\"button\");\n\t" +
+				"serialize.addEventListener( \"click\", function(e){\n\t"  +
+				"\tvar ser = $fsm.serialize();\n\t" +
+				"\tconsole.log(ser);\n\t" +
+				"});\n\t" +
+				"serialize.appendChild(document.createTextNode(\"Serialize\"));" + 
+				"document.body.appendChild(serialize);\n\t";
+			var headScript = domTreeTraversal("document", headObj);
+			var bodyScript = domTreeTraversal("document", bodyObj);
+	
+
+			var script = 
+				"// DOM TREE RENDERING SOURCE \n" + 
+				"var dom_obj = new Array();\n" +
+				"window.onload = function () { \n\t" + 
+					headScript + 
+					bodyScript +
+				"}; \n";
+			//console.log(script);
+			eval(script);
 			return script;
-			
-			function getHtmlObj(domObj){
+
+			function getHtmlInd(domObj){
 				for( ind in domObj ){
 					if( domObj[ind].name == "html" )
-						return domObj[ind];
+						return ind;
 				}
 			}
-			
+
 			function domTreeTraversal(parent, node){
 				var dtt = {
 					createElement : function(){
-						return "var " + this.elemName +  " = document.createElement("  + JSON.stringify(node.name) + " );\n\t";
+						return this.elemName +  " = document.createElement("  + JSON.stringify(node.nodeName) + ");\n\t";
 					}, 
 					createTextNode : function(){
-						return "var " + this.elemName +  " = document.createTextNode(" + JSON.stringify(node.data) + ");\n\t";
+						return this.elemName +  " = document.createTextNode(" + JSON.stringify(node.data) + ");\n\t";
 					},
 					setAttribs : function(){
 						ret = "";
-						if( node.attribs != undefined ){
-							for(var key in node.attribs){
-								if( HtmlDomEvents.includes( key ) ){
-									ret += ( this.elemName + ".addEventListener(" + JSON.stringify(key.substr(2)) + ", function () {\n\t" +
-										"\tvar func = " + JSON.stringify(node.attribs[key]) + ";\n\t"+
-										"\tvar func_name = func.substr( 0, func.indexOf(\"(\")).trim();\n\t" + 
-										"\tvar fsm = $fsm.includes( func_name ) ? \"$fsm0.\"  : \"\"\n\t" +
-										"\teval( fsm + func ) \n\t" + 
-										"}); \n\t" );
-								} else {
-									ret += ( this.elemName + ".setAttribute(" + JSON.stringify(key) + ", " + JSON.stringify(node.attribs[key]) + ") ;\n\t");
-								}
+						var attribs = node.attributes;
+						if( attribs == undefined ) return ret;
+						for( var i = 0 ; i < attribs.length ; i++ ){
+							var key   = attribs[i].name;
+							var value = attribs[i].value;
+							if( HtmlDomEvents.includes( key ) ){
+								ret += ( this.elemName + ".addEventListener(" + JSON.stringify(key.substr(2)) + ", function () {\n\t" +
+									"\tvar func = " + JSON.stringify(value) + ";\n\t"+
+									"\tvar func_name = func.substr( 0, func.indexOf(\"(\")).trim();\n\t" + 
+									"\tvar fsm = $fsm.includes( func_name ) ? \"$fsm0.\"  : \"\"\n\t" +
+									"\teval( fsm + func ) \n\t" + 
+									"}); \n\t" );
+							} else {
+								ret += ( this.elemName + ".setAttribute(" + JSON.stringify(key) + ", " + JSON.stringify(value) + ") ;\n\t");
 							}
 						}
 						return ret;
 					},
 					appendChildtoNode: function(){
 						var ret = "";
-						for( var key in node.children ){
-							ret += domTreeTraversal(this.elemName, node.children[key]);
+						for( var i = 0 ; i < node.childNodes.length ; i++ ){
+							ret += domTreeTraversal(this.elemName, node.childNodes[i]);
 						}
 						return ret;
 					},
@@ -169,15 +191,18 @@ var $fsm = (function() {
 						return parent + ".appendChild( " + this.elemName + " );\n\t";
 					}
 				}
+
 				
 				var script = "";
+				if( node == undefined ) return script;
+
 				if( parent == "document" ){
-					dtt.elemName = parent + "." + node.name;
+					dtt.elemName = parent + "." + node.nodeName.toLowerCase();
 					script += dtt.setAttribs();
 					script += dtt.appendChildtoNode();
 				} else {
-					dtt.elemName = "node_" + glob_cnt++;
-					if( node.type == "text" ) {
+					dtt.elemName = "dom_obj[" + glob_cnt++ + "]";
+					if( node.nodeName == "#text" ) {
 						script += dtt.createTextNode();
 						script += dtt.appendChildtoParent();
 					} else {
@@ -262,8 +287,144 @@ var JSONfn = new Object();
     return exports.parse(exports.stringify(obj), date2obj);
   };
 }(JSONfn));
+
+var HtmlDomEvents = {
+	includes : function (attrib){
+		return this.MouseEvents.includes(attrib) ||
+			this.KeyboardEvents.includes(attrib) ||
+			this.FrameObjectEvents.includes(attrib) ||
+			this.FormEvents.includes(attrib) ||
+			this.DragEvents.includes(attrib) ||
+			this.ClipboardEvents.includes(attrib) ||
+			this.PrintEvents.includes(attrib) ||
+			this.MediaEvents.includes(attrib) ||
+			this.AnimationEvents.includes(attrib) ||
+			this.TransitionEvents.includes(attrib) ||
+			this.ServerSentEvents.includes(attrib) ||
+			this.MiscEvents.includes(attrib) ||
+			this.TouchEvents.includes(attrib);
+	},
+	MouseEvents : [ 
+		"onclick",
+		"oncontextmenu",
+		"ondblclick",
+		"onmousedown",
+		"onmouseenter",
+		"onmouseleave",
+		"onmousemoe",
+		"onmouseover",
+		"onmouseout",
+		"onmouseup",
+	],
+	KeyboardEvents : [
+		"onkeydown",
+		"onkeypress",
+		"onkeyup"
+	],
+	FrameObjectEvents : [
+		"onabort",
+		"onbeforeunload",
+		"onerror",
+		"onhashchange",
+		"onload",
+		"onpageshow",
+		"onpagehide",
+		"onresize",
+		"onscroll",
+		"onunload"
+	],
+	FormEvents : [
+		"onblur",
+		"onchange",
+		"onfocus",
+		"onfocusin",
+		"onfocusout",
+		"oninput",
+		"oninvalid",
+		"onreset",
+		"onsearch",
+		"onselect",
+		"onsubmit"
+	],
+	DragEvents : [
+		"ondrag",
+		"ondragend",
+		"ondragenter",
+		"ondragleave",
+		"ondragover",
+		"ondragstart",
+		"ondrop"
+	],
+	ClipboardEvents : [
+		"oncopy",
+		"oncut",
+		"onpaste"
+	],
+	PrintEvents : [
+		"onafterprint",
+		"onbeforeprint",
+	],
+	MediaEvents : [
+		"onabort",
+		"oncanplay",
+		"oncanplaythrough",
+		"ondurationchange",
+		"onemptied",
+		"onended",
+		"onerror",
+		"onloadeddata",
+		"onloadedmetadata",
+		"onloadstart",
+		"onpause",
+		"onplay",
+		"onplaying",
+		"onprogress",
+		"onratechange",
+		"onseeked",
+		"onseeking",
+		"onstalled",
+		"onsuspend",
+		"ontimeupdate",
+		"onvolumechange",
+		"onwaiting"
+	],
+	AnimationEvents : [
+		"animationend",
+		"animationiteration",
+		"animationstart"
+	],
+	TransitionEvents : [
+		"transitionend"
+	],
+	ServerSentEvents : [
+		"onerror",
+		"onmessage",
+		"onopen"
+	],
+	MiscEvents : [
+		"onmessage",
+		"onmousewheel",
+		"ononline",
+		"onoffline",
+		"onpopstate",
+		"onshow",
+		"onstorage",
+		"ontoggle",
+		"onwheel"		
+	],
+	TouchEvents : [
+		"ontouchcancel",
+		"ontouchend",
+		"ontouchmove",
+		"ontouchstart"
+	]
+};
+
+
 //}(typeof exports === 'undefined' ? (window.JSONfn = {}) : exports));
 
+/*
 module.exports = {
   $fsm, $fsm0, JSONfn
 }
+*/

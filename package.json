@@ -13,12 +13,14 @@
     "estraverse": "^4.2.0",
     "file-api": "^0.10.4",
     "filereader": "^0.10.3",
-    "htmlparser": "^1.7.7",
+    "html-minifier": "^3.5.5",
     "json-fn": "^1.1.1",
+    "minifier": "^0.8.1",
     "performance-now": "^2.1.0",
     "virtual-dom": "^2.1.1",
     "webpack": "^3.3.0",
-    "xmlhttprequest": "^1.8.0"
+    "xmlhttprequest": "^1.8.0",
+    "xmlserializer": "^0.6.0"
   },
   "devDependencies": {},
   "scripts": {
