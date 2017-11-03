@@ -110,6 +110,8 @@ var g = global;
 g['document'] = undefined;
 g['window'] = undefined;
 g['performance'] = undefined;
+g['alert'] = undefined;
+
 var referencedGlobals = [];
 var statementScope = {
 	ForStatement: []
@@ -318,6 +320,13 @@ function traceInstrument(code) {
 				// Put a global variable which was written to the reference table
 				if (node.left && node.left.type == Syntax.Identifier && node.left.name in g) {
 					referencedGlobals.pushIdentical(node.left.name);
+				}
+			}
+
+			// Event Handler
+			if (node.type == Syntax.Identifier) {
+				if (['addEventListener', 'onclick', 'onchange', 'onmouseover', 'onmouseout', 'onkeydown', 'onload', 'setTimeout'].includes(node.name)){
+					node.name = 'fsm_' + node.name;
 				}
 			}
 
