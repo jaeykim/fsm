@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "babel-polyfill": "^6.23.0",
+    "dom-parser": "^0.1.5",
     "escodegen": "^1.8.1",
     "esmorph": "0.0.1",
     "estraverse": "^4.2.0",

@@ -10,6 +10,7 @@ var foo = function() {
       var j = k++;
     }
     console.log(k);
+    return bboo;
   }
   var koo = function() {
     closure.a++;
@@ -18,5 +19,5 @@ var foo = function() {
   return boo;
 }
 
-var f = foo();
+var f = foo;
 f();
