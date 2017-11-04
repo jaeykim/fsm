@@ -176,7 +176,8 @@ Array.prototype.getScopeStatement = function (name) {
 		debug.log('[getScopeStatement] variable is an argument');
 		scopeObjs.push(scopeId);
 		//return new MemberExpression(true, ('$fsm' + scopeId), 
-		return new Identifier('$fsm' + scopeId+ '.$arguments' + argId); // OPT ME: convert to an AST node
+		//return new Identifier('$fsm' + scopeId+ '.$arguments' + argId); // OPT ME: convert to an AST node
+		return new Identifier(name); // OPT ME: convert to an AST node
 	}
 };
 
@@ -296,10 +297,13 @@ function traceInstrument(code) {
 					} else {
 						replaced = new AssignmentExpression(
 									'=',
+									/*
 									new MemberExpression(false,
 										new Identifier('$fsm' + scopeId),
 										new Identifier(node.declarations[i].id.name)
 										),
+									*/
+									new Identifier(node.declarations[i].id.name),
 									new Identifier('undefined')
 									);
 					}

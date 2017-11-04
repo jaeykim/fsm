@@ -1,9 +1,141 @@
 var fs = require("fs");
 var instUtil = require("./instUtil.js");
 var glob_jscode = "";
+var glob_event_attribs = new Array();
+
+var HtmlDomEvents = {
+	includes : function (attrib){
+		return this.MouseEvents.includes(attrib) ||
+			this.KeyboardEvents.includes(attrib) ||
+			this.FrameObjectEvents.includes(attrib) ||
+			this.FormEvents.includes(attrib) ||
+			this.DragEvents.includes(attrib) ||
+			this.ClipboardEvents.includes(attrib) ||
+			this.PrintEvents.includes(attrib) ||
+			this.MediaEvents.includes(attrib) ||
+			this.AnimationEvents.includes(attrib) ||
+			this.TransitionEvents.includes(attrib) ||
+			this.ServerSentEvents.includes(attrib) ||
+			this.MiscEvents.includes(attrib) ||
+			this.TouchEvents.includes(attrib);
+	},
+	MouseEvents : [ 
+		"onclick",
+		"oncontextmenu",
+		"ondblclick",
+		"onmousedown",
+		"onmouseenter",
+		"onmouseleave",
+		"onmousemoe",
+		"onmouseover",
+		"onmouseout",
+		"onmouseup",
+	],
+	KeyboardEvents : [
+		"onkeydown",
+		"onkeypress",
+		"onkeyup"
+	],
+	FrameObjectEvents : [
+		"onabort",
+		"onbeforeunload",
+		"onerror",
+		"onhashchange",
+		"onload",
+		"onpageshow",
+		"onpagehide",
+		"onresize",
+		"onscroll",
+		"onunload"
+	],
+	FormEvents : [
+		"onblur",
+		"onchange",
+		"onfocus",
+		"onfocusin",
+		"onfocusout",
+		"oninput",
+		"oninvalid",
+		"onreset",
+		"onsearch",
+		"onselect",
+		"onsubmit"
+	],
+	DragEvents : [
+		"ondrag",
+		"ondragend",
+		"ondragenter",
+		"ondragleave",
+		"ondragover",
+		"ondragstart",
+		"ondrop"
+	],
+	ClipboardEvents : [
+		"oncopy",
+		"oncut",
+		"onpaste"
+	],
+	PrintEvents : [
+		"onafterprint",
+		"onbeforeprint",
+	],
+	MediaEvents : [
+		"onabort",
+		"oncanplay",
+		"oncanplaythrough",
+		"ondurationchange",
+		"onemptied",
+		"onended",
+		"onerror",
+		"onloadeddata",
+		"onloadedmetadata",
+		"onloadstart",
+		"onpause",
+		"onplay",
+		"onplaying",
+		"onprogress",
+		"onratechange",
+		"onseeked",
+		"onseeking",
+		"onstalled",
+		"onsuspend",
+		"ontimeupdate",
+		"onvolumechange",
+		"onwaiting"
+	],
+	AnimationEvents : [
+		"animationend",
+		"animationiteration",
+		"animationstart"
+	],
+	TransitionEvents : [
+		"transitionend"
+	],
+	ServerSentEvents : [
+		"onerror",
+		"onmessage",
+		"onopen"
+	],
+	MiscEvents : [
+		"onmessage",
+		"onmousewheel",
+		"ononline",
+		"onoffline",
+		"onpopstate",
+		"onshow",
+		"onstorage",
+		"ontoggle",
+		"onwheel"		
+	],
+	TouchEvents : [
+		"ontouchcancel",
+		"ontouchend",
+		"ontouchmove",
+		"ontouchstart"
+	]
+};
 
 main();
-
 function main(){
 	// Read raw HTML file to text
 	if (  process.argv.length > 2 ) {
@@ -20,12 +152,57 @@ function main(){
 
 	// <script> ... </script> case..
 	var instHTML = instScript(compressedHTML);
+	//registerEventAttribs(instHTML);
 	var script = getScript(instHTML);
 	var source   = fin.substring(fin.lastIndexOf("/")).substring(0, fin.lastIndexOf(".")) + ".js";
-	
-	saveScript( "./domtree/", source, script);
-	saveScript( "./inst/", source, glob_jscode);
 
+	saveScript( "./domtree/", source, script);
+	//saveScript( "./inst/", source, glob_jscode);
+
+}
+
+function registerEventAttribs( html ){
+	// Event script, object, event, callback
+	var DOMParser = require("dom-parser");
+	var parser = new DOMParser();
+	
+	var doc = parser.parseFromString(html, "text/html");
+	domTreeTraversal("document.head", doc.getElementsByTagName("head")[0]);
+	domTreeTraversal("document.body", doc.getElementsByTagName("body")[0]);
+	
+	return html;
+
+	function domTreeTraversal(path, node){
+		var dtt = {
+			checkAttribs : function(){
+				var attribs = node.attributes;
+				if( attribs == undefined ) return;
+				for( var i = 0 ; i < attribs.length ; i++ ){
+					var key   = attribs[i].name;
+					var value = attribs[i].value;
+					if( HtmlDomEvents.includes( key ) ){
+						console.log(path, key, value);
+						glob_event_attribs.push({
+							"obj" : path,
+							"event" : key.substr(2),
+							"callback" : value
+						});
+					}
+				}
+			},
+			traverseChild: function(){
+				if( node.childNodes == undefined ) return;
+				for( var i = 0 ; i < node.childNodes.length ; i++ ){
+					domTreeTraversal(path + ".childNodes[" + i + "]", node.childNodes[i]);
+				}
+			}
+		}
+		
+		if( node == undefined ) return;
+		if( node.nodeName != "#text")
+			dtt.checkAttribs();
+		dtt.traverseChild();
+	}
 }
 
 function instScript( html ){
@@ -54,25 +231,23 @@ function instScript( html ){
 			startTag_replace = startTag.substr(0, srcind) + startTag.substr(srcind + 7 + filename.length);
 			innerHTML_replace = jscodeSrc + "\n" + innerHTML_replace;
 		}
-
 		glob_jscode += innerHTML_replace + "\n\n";
 
-
-		var scriptElem_replace = startTag_replace + innerHTML_replace + endTag;
 		ret = ret.replace( scriptElem,"");
-		
-		console.log( "src elem : ", scriptElem );	
 	}
 	return ret;
 }
 
 function getScript( rawHTML ){
 	var script = 
-		"// traceInstrument of javascript code \n" + 
-		instUtil.traceInstrument(glob_jscode) + "\n\n" +
 		"// restore Dom object \n" + 
 		"var rawHTML = " + JSON.stringify(rawHTML) + ";\n"+
-		"window.onload = $fsm.restoreDOM(rawHTML);\n";
+		"$fsm.restoreDOM(rawHTML);\n\n" +
+		"// traceInstrument of javascript code \n" + 
+		instUtil.traceInstrument(glob_jscode) + "\n\n" +
+		"// Event attributes re-register \n" + 
+		"$fsm.registerEventAttribs()";
+		
 	return script;
 }
 
@@ -91,3 +266,4 @@ function saveScript(path, filename, script){
 		}
 	});
 }
+

@@ -22,6 +22,8 @@ var $fsm = (function() {
 	var dom;
 	var ref_table = new Array();
 	var event_table = new Array();
+	var event_attrib_table = new Array();
+
 	//var call_stack = new Array();
 	//call_stack.push(new Object()); // global object
 	//Object.prototype.$ref_table = ref_table;
@@ -72,7 +74,13 @@ var $fsm = (function() {
 			//var ser = JSONfn.stringify(ref_table);
 			//var dom = JsonML.fromHTML(document);
 
-			var code = "// ref_table serialize code \n";
+			var code = "";
+			// [runtime] DOM tree recover code by Yoo Hyeongseok 2017.10.25
+			code += "// Restore Dom Object \n";
+			code += "var rawHTML = " + JSON.stringify(document.documentElement.outerHTML) + "\n";
+			code += "$fsm.restoreDOM(rawHTML);\n\n";
+			
+			code += "// ref_table serialize code \n";
 			// [runtime] serialize js code by Yoo Hyeongseok, 2017.09.26
 			for( var i = 0 ; i < 1 ; i++ ){
 				for( var key in ref_table[i] ) {
@@ -107,23 +115,31 @@ var $fsm = (function() {
 			}
 
 			// [runtime] Event handler
+			code += "\n";
 			for ( var i = 0; i < eh_index; i++){
 				if (event_table[i].type == 0){
-					code += "$fsm" + $fsm.getScopeObj($fsm.event_table[i].obj) + ".fsm_addEventListener(" + JSON.stringify(event_table[i].event) + ", " + event_table[i].callback.toString() + ");\n";
+					if( $fsm.getScopeObj($fsm.event_table[i].obj) ){
+						code += JSON.stringify($fsm.event_table[i].obj) + ".fsm_addEventListener(" + JSON.stringify(event_table[i].event) + ", " + event_table[i].callback.toString() + ");\n";
+					}
+					else {
+						code += "$fsm" + $fsm.getScopeObj($fsm.event_table[i].obj) + ".fsm_addEventListener(" + JSON.stringify(event_table[i].event) + ", " + event_table[i].callback.toString() + ");\n";
+					}
 				}
 				if (event_table[i].type == 1){
 					var time_modify = event_table[i].time - t0;
 					if( time_modify < 0 ) continue;
-					code += "$fsm" + $fsm.getScopeObj($fsm.event_table[i].obj) + ".fsm_setTimeout(" + $fsm.event_table[i].callback.toString() + ", " + time_modify + ");\n";
+					if( $fsm.getScopeObj($fsm.event_table[i].obj) ){
+						code += JSON.stringify($fsm.event_table[i].obj) + ".fsm_setTimeout(" + $fsm.event_table[i].callback.toString() + ", " + time_modify + ");\n";
+					}
+					else {
+						code += "$fsm" + $fsm.getScopeObj($fsm.event_table[i].obj) + ".fsm_setTimeout(" + $fsm.event_table[i].callback.toString() + ", " + time_modify + ");\n";
+					}
 				}
 			}
 
-			// [runtime] DOM tree recover code by Yoo Hyeongseok 2017.10.25
-			code += "\n\n";
-			code += "// Restore Dom Object \n";
-			code += "var rawHTML = " + JSON.stringify(document.documentElement.outerHTML) + "\n";
-			code += "window.onload = $fsm.restoreDOM(rawHTML);\n";
-			
+			code += "\n";
+			code += "// Event attributes re-register \n";
+			code += "$fsm.registerEventAttribs(); \n\n";
 
 			console.log('serialize time: ' + (new Date().getTime() - t0));
 			//console.log(code);
@@ -166,12 +182,8 @@ var $fsm = (function() {
 							var key   = attribs[i].name;
 							var value = attribs[i].value;
 							if( HtmlDomEvents.includes( key ) ){
-								var func_str = value.trim();
-								var func_name = func_str.substr(0, func_str.indexOf("(")).trim();
-								if( func_name in ref_table[0] ){
-									var func_name_updated = "$fsm0." + func_str;
-									node.setAttribute(key, func_name_updated );
-								}
+								console.log( node, key, value );
+								event_attrib_table.push( { "obj" : node, "event" : key, "callback" : value });
 							}
 						}
 					},
@@ -188,6 +200,23 @@ var $fsm = (function() {
 				dtt.traverseChild();
 			}
 		},
+		registerEventAttribs : function(){
+			for( var i = 0 ; i < event_attrib_table.length ; i++ ) {
+				var event_attrib = event_attrib_table[i];
+				var htmlElem = event_attrib["obj"]
+				var event    = event_attrib["event"];
+				var callback = event_attrib["callback"];
+				var callback_replace = callback;
+				var funcname = callback.substr(0, callback.indexOf("(")).trim();
+				if( funcname in ref_table[0] )
+					callback_replace = '$fsm0.' + callback.trim();
+				
+				if( htmlElem.getAttribute(event) == callback ) {
+					htmlElem.removeAttribute( event );
+					htmlElem.setAttribute( event, callback_replace );
+				}
+			}
+		},
 		ref_table: ref_table,
 		event_table: event_table
 	};
@@ -200,6 +229,7 @@ Object.prototype.fsm_addEventListener = function(event, callback){
 
 // window. -> Object.prototype.
 Object.prototype.fsm_setTimeout = function(callback, time){
+	console.log(this);
 	var startTime = new Date().getTime();
 	$fsm.setTime(this, callback, startTime + time);
 	var endTime = new Date().getTime();
