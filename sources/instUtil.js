@@ -261,10 +261,13 @@ function traceInstrument(code) {
 					} else {
 						replaced = new AssignmentExpression(
 									'=',
+									/*
 									new MemberExpression(false,
 										new Identifier('$fsm' + scopeChain[scopeId].ref_num),
 										new Identifier(node.declarations[i].id.name)
 										),
+									*/
+									new Identifier(node.declarations[i].id.name),
 									new Identifier('undefined')
 									);
 					}

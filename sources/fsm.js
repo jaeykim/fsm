@@ -14,12 +14,11 @@ http.onreadystatechange = function() {//Call a function when the state changes.
 http.send(params);
 */
 
-//$fsm0 = fsm.create();
 
-var esprima = require('frameworks/esprima.js');
-var estraverse = require('frameworks/estraverse.browser.js');
+//var esprima = require('frameworks/esprima.js');
+//var estraverse = require('frameworks/estraverse.browser.js');
 
-var fsm = (function() {
+var $fsm = (function() {
 	var ref_table = new Array();
 	//var call_stack = new Array();
 	//call_stack.push(new Object()); // global object
@@ -72,6 +71,8 @@ var fsm = (function() {
 		}
 	};
 })();
+
+$fsm0 = $fsm.create();
 
 (function (exports) {
 "use strict";
