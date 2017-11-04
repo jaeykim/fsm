@@ -1,107 +1,107 @@
-$fsm[0].pathWidth = 10;
-$fsm[0].wall = 2;
-$fsm[0].outerWall = 2;
-$fsm[0].width = 25;
-$fsm[0].height = 25;
-$fsm[0].delay = 1;
-$fsm[0].x = $fsm[0].width / 2 | 0;
-$fsm[0].y = $fsm[0].height / 2 | 0;
-$fsm[0].seed = Math.random() * 100000 | 0;
-$fsm[0].wallColor = '#d24';
-$fsm[0].pathColor = '#222a33';
-$fsm[0].randomGen = function (seed) {
-    $fsm[1] = runtime.create(arguments);
-    if ($fsm[1].$arguments[0] === undefined)
-        $fsm[1].$arguments[0] = performance.now();
+$fsm0.pathWidth = 10;
+$fsm0.wall = 2;
+$fsm0.outerWall = 2;
+$fsm0.width = 25;
+$fsm0.height = 25;
+$fsm0.delay = 1;
+$fsm0.x = $fsm0.width / 2 | 0;
+$fsm0.y = $fsm0.height / 2 | 0;
+$fsm0.seed = Math.random() * 100000 | 0;
+$fsm0.wallColor = '#d24';
+$fsm0.pathColor = '#222a33';
+$fsm0.randomGen = function (seed) {
+    $fsm1 = fsm.create(arguments);
+    if ($fsm1.$arguments0 === undefined)
+        $fsm1.$arguments0 = performance.now();
     return function () {
-        $fsm[2] = runtime.create(arguments);
-        $fsm[1].$arguments[0] = ($fsm[1].$arguments[0] * 9301 + 49297) % 233280;
-        return $fsm[1].$arguments[0] / 233280;
+        $fsm2 = fsm.create(arguments);
+        $fsm1.$arguments0 = ($fsm1.$arguments0 * 9301 + 49297) % 233280;
+        return $fsm1.$arguments0 / 233280;
     };
 };
-$fsm[0].init = function () {
-    $fsm[3] = runtime.create(arguments);
-    $fsm[0].offset = $fsm[0].pathWidth / 2 + $fsm[0].outerWall;
-    $fsm[0].map = [];
-    $fsm[0].canvas = document.querySelector('canvas');
-    $fsm[0].ctx = $fsm[0].canvas.getContext('2d');
-    $fsm[0].canvas.width = $fsm[0].outerWall * 2 + $fsm[0].width * ($fsm[0].pathWidth + $fsm[0].wall) - $fsm[0].wall;
-    $fsm[0].canvas.height = $fsm[0].outerWall * 2 + $fsm[0].height * ($fsm[0].pathWidth + $fsm[0].wall) - $fsm[0].wall;
-    $fsm[0].ctx.fillStyle = $fsm[0].wallColor;
-    $fsm[0].ctx.fillRect(0, 0, $fsm[0].canvas.width, $fsm[0].canvas.height);
-    $fsm[0].random = $fsm[0].randomGen($fsm[0].seed);
-    $fsm[0].ctx.strokeStyle = $fsm[0].pathColor;
-    $fsm[0].ctx.lineCap = 'square';
-    $fsm[0].ctx.lineWidth = $fsm[0].pathWidth;
-    $fsm[0].ctx.beginPath();
-    for ($fsm[3].i = 0; $fsm[3].i < $fsm[0].height * 2; $fsm[3].i++) {
-        $fsm[0].map[$fsm[3].i] = [];
-        for ($fsm[3].j = 0; $fsm[3].j < $fsm[0].width * 2; $fsm[3].j++) {
-            $fsm[0].map[$fsm[3].i][$fsm[3].j] = false;
+$fsm0.init = function () {
+    $fsm3 = fsm.create(arguments);
+    $fsm0.offset = $fsm0.pathWidth / 2 + $fsm0.outerWall;
+    $fsm0.map = [];
+    $fsm0.canvas = document.querySelector('canvas');
+    $fsm0.ctx = $fsm0.canvas.getContext('2d');
+    $fsm0.canvas.width = $fsm0.outerWall * 2 + $fsm0.width * ($fsm0.pathWidth + $fsm0.wall) - $fsm0.wall;
+    $fsm0.canvas.height = $fsm0.outerWall * 2 + $fsm0.height * ($fsm0.pathWidth + $fsm0.wall) - $fsm0.wall;
+    $fsm0.ctx.fillStyle = $fsm0.wallColor;
+    $fsm0.ctx.fillRect(0, 0, $fsm0.canvas.width, $fsm0.canvas.height);
+    $fsm0.random = $fsm0.randomGen($fsm0.seed);
+    $fsm0.ctx.strokeStyle = $fsm0.pathColor;
+    $fsm0.ctx.lineCap = 'square';
+    $fsm0.ctx.lineWidth = $fsm0.pathWidth;
+    $fsm0.ctx.beginPath();
+    for ($fsm3.i = 0; $fsm3.i < $fsm0.height * 2; $fsm3.i++) {
+        $fsm0.map[$fsm3.i] = [];
+        for ($fsm3.j = 0; $fsm3.j < $fsm0.width * 2; $fsm3.j++) {
+            $fsm0.map[$fsm3.i][$fsm3.j] = false;
         }
     }
-    $fsm[0].map[$fsm[0].y * 2][$fsm[0].x * 2] = true;
-    $fsm[0].route = [[
-            $fsm[0].x,
-            $fsm[0].y
+    $fsm0.map[$fsm0.y * 2][$fsm0.x * 2] = true;
+    $fsm0.route = [[
+            $fsm0.x,
+            $fsm0.y
         ]];
-    $fsm[0].ctx.moveTo($fsm[0].x * ($fsm[0].pathWidth + $fsm[0].wall) + $fsm[0].offset, $fsm[0].y * ($fsm[0].pathWidth + $fsm[0].wall) + $fsm[0].offset);
+    $fsm0.ctx.moveTo($fsm0.x * ($fsm0.pathWidth + $fsm0.wall) + $fsm0.offset, $fsm0.y * ($fsm0.pathWidth + $fsm0.wall) + $fsm0.offset);
 };
-$fsm[0].init();
-$fsm[0].inputWidth = document.getElementById('width');
-$fsm[0].inputHeight = document.getElementById('height');
-$fsm[0].inputPathWidth = document.getElementById('pathwidth');
-$fsm[0].inputWallWidth = document.getElementById('wallwidth');
-$fsm[0].inputOuterWidth = document.getElementById('outerwidth');
-$fsm[0].inputPathColor = document.getElementById('pathcolor');
-$fsm[0].inputWallColor = document.getElementById('wallcolor');
-$fsm[0].inputSeed = document.getElementById('seed');
-$fsm[0].buttonRandomSeed = document.getElementById('randomseed');
-$fsm[0].settings = {
+$fsm0.init();
+$fsm0.inputWidth = document.getElementById('width');
+$fsm0.inputHeight = document.getElementById('height');
+$fsm0.inputPathWidth = document.getElementById('pathwidth');
+$fsm0.inputWallWidth = document.getElementById('wallwidth');
+$fsm0.inputOuterWidth = document.getElementById('outerwidth');
+$fsm0.inputPathColor = document.getElementById('pathcolor');
+$fsm0.inputWallColor = document.getElementById('wallcolor');
+$fsm0.inputSeed = document.getElementById('seed');
+$fsm0.buttonRandomSeed = document.getElementById('randomseed');
+$fsm0.settings = {
     display: function () {
-        $fsm[4] = runtime.create(arguments);
-        $fsm[0].inputWidth.value = $fsm[0].width;
-        $fsm[0].inputHeight.value = $fsm[0].height;
-        $fsm[0].inputPathWidth.value = $fsm[0].pathWidth;
-        $fsm[0].inputWallWidth.value = $fsm[0].wall;
-        $fsm[0].inputOuterWidth.value = $fsm[0].outerWall;
-        $fsm[0].inputPathColor.value = $fsm[0].pathColor;
-        $fsm[0].inputWallColor.value = $fsm[0].wallColor;
-        $fsm[0].inputSeed.value = $fsm[0].seed;
+        $fsm4 = fsm.create(arguments);
+        $fsm0.inputWidth.value = $fsm0.width;
+        $fsm0.inputHeight.value = $fsm0.height;
+        $fsm0.inputPathWidth.value = $fsm0.pathWidth;
+        $fsm0.inputWallWidth.value = $fsm0.wall;
+        $fsm0.inputOuterWidth.value = $fsm0.outerWall;
+        $fsm0.inputPathColor.value = $fsm0.pathColor;
+        $fsm0.inputWallColor.value = $fsm0.wallColor;
+        $fsm0.inputSeed.value = $fsm0.seed;
     },
     check: function () {
-        $fsm[5] = runtime.create(arguments);
-        if ($fsm[0].inputWidth.value != $fsm[0].width || $fsm[0].inputHeight.value != $fsm[0].height || $fsm[0].inputPathWidth.value != $fsm[0].pathWidth || $fsm[0].inputWallWidth.value != $fsm[0].wall || $fsm[0].inputOuterWidth.value != $fsm[0].outerWall || $fsm[0].inputPathColor.value != $fsm[0].pathColor || $fsm[0].inputWallColor.value != $fsm[0].wallColor || $fsm[0].inputSeed.value != $fsm[0].seed) {
-            $fsm[0].settings.update();
+        $fsm5 = fsm.create(arguments);
+        if ($fsm0.inputWidth.value != $fsm0.width || $fsm0.inputHeight.value != $fsm0.height || $fsm0.inputPathWidth.value != $fsm0.pathWidth || $fsm0.inputWallWidth.value != $fsm0.wall || $fsm0.inputOuterWidth.value != $fsm0.outerWall || $fsm0.inputPathColor.value != $fsm0.pathColor || $fsm0.inputWallColor.value != $fsm0.wallColor || $fsm0.inputSeed.value != $fsm0.seed) {
+            $fsm0.settings.update();
         }
     },
     update: function () {
-        $fsm[6] = runtime.create(arguments);
-        clearTimeout($fsm[0].timer);
-        $fsm[0].width = parseFloat($fsm[0].inputWidth.value);
-        $fsm[0].height = parseFloat($fsm[0].inputHeight.value);
-        $fsm[0].pathWidth = parseFloat($fsm[0].inputPathWidth.value);
-        $fsm[0].wall = parseFloat($fsm[0].inputWallWidth.value);
-        $fsm[0].outerWall = parseFloat($fsm[0].inputOuterWidth.value);
-        $fsm[0].pathColor = $fsm[0].inputPathColor.value;
-        $fsm[0].wallColor = $fsm[0].inputWallColor.value;
-        $fsm[0].seed = parseFloat($fsm[0].inputSeed.value);
-        $fsm[0].x = $fsm[0].width / 2 | 0;
-        $fsm[0].y = $fsm[0].height / 2 | 0;
-        $fsm[0].init();
-        $fsm[0].loop();
+        $fsm6 = fsm.create(arguments);
+        clearTimeout($fsm0.timer);
+        $fsm0.width = parseFloat($fsm0.inputWidth.value);
+        $fsm0.height = parseFloat($fsm0.inputHeight.value);
+        $fsm0.pathWidth = parseFloat($fsm0.inputPathWidth.value);
+        $fsm0.wall = parseFloat($fsm0.inputWallWidth.value);
+        $fsm0.outerWall = parseFloat($fsm0.inputOuterWidth.value);
+        $fsm0.pathColor = $fsm0.inputPathColor.value;
+        $fsm0.wallColor = $fsm0.inputWallColor.value;
+        $fsm0.seed = parseFloat($fsm0.inputSeed.value);
+        $fsm0.x = $fsm0.width / 2 | 0;
+        $fsm0.y = $fsm0.height / 2 | 0;
+        $fsm0.init();
+        $fsm0.loop();
     }
 };
-$fsm[0].buttonRandomSeed.addEventListener('click', function () {
-    $fsm[7] = runtime.create(arguments);
-    $fsm[0].inputSeed.value = Math.random() * 100000 | 0;
+$fsm0.buttonRandomSeed.addEventListener('click', function () {
+    $fsm7 = fsm.create(arguments);
+    $fsm0.inputSeed.value = Math.random() * 100000 | 0;
 });
-$fsm[0].loop = function () {
-    $fsm[8] = runtime.create(arguments);
-    $fsm[0].x = $fsm[0].route[$fsm[0].route.length - 1][0] | 0;
-    $fsm[0].y = $fsm[0].route[$fsm[0].route.length - 1][1] | 0;
+$fsm0.loop = function () {
+    $fsm8 = fsm.create(arguments);
+    $fsm0.x = $fsm0.route[$fsm0.route.length - 1][0] | 0;
+    $fsm0.y = $fsm0.route[$fsm0.route.length - 1][1] | 0;
     {
-        $fsm[8].directions = [
+        $fsm8.directions = [
             [
                 1,
                 0
@@ -119,39 +119,39 @@ $fsm[0].loop = function () {
                 -1
             ]
         ];
-        $fsm[8].alternatives = [];
+        $fsm8.alternatives = [];
     }
-    for ($fsm[8].i = 0; $fsm[8].i < $fsm[8].directions.length; $fsm[8].i++) {
-        if ($fsm[0].map[($fsm[8].directions[$fsm[8].i][1] + $fsm[0].y) * 2] != undefined && $fsm[0].map[($fsm[8].directions[$fsm[8].i][1] + $fsm[0].y) * 2][($fsm[8].directions[$fsm[8].i][0] + $fsm[0].x) * 2] === false) {
-            $fsm[8].alternatives.push($fsm[8].directions[$fsm[8].i]);
+    for ($fsm8.i = 0; $fsm8.i < $fsm8.directions.length; $fsm8.i++) {
+        if ($fsm0.map[($fsm8.directions[$fsm8.i][1] + $fsm0.y) * 2] != undefined && $fsm0.map[($fsm8.directions[$fsm8.i][1] + $fsm0.y) * 2][($fsm8.directions[$fsm8.i][0] + $fsm0.x) * 2] === false) {
+            $fsm8.alternatives.push($fsm8.directions[$fsm8.i]);
         }
     }
-    if ($fsm[8].alternatives.length === 0) {
-        $fsm[0].route.pop();
-        if ($fsm[0].route.length > 0) {
-            $fsm[0].ctx.moveTo($fsm[0].route[$fsm[0].route.length - 1][0] * ($fsm[0].pathWidth + $fsm[0].wall) + $fsm[0].offset, $fsm[0].route[$fsm[0].route.length - 1][1] * ($fsm[0].pathWidth + $fsm[0].wall) + $fsm[0].offset);
-            $fsm[0].timer = setTimeout($fsm[0].loop, $fsm[0].delay);
+    if ($fsm8.alternatives.length === 0) {
+        $fsm0.route.pop();
+        if ($fsm0.route.length > 0) {
+            $fsm0.ctx.moveTo($fsm0.route[$fsm0.route.length - 1][0] * ($fsm0.pathWidth + $fsm0.wall) + $fsm0.offset, $fsm0.route[$fsm0.route.length - 1][1] * ($fsm0.pathWidth + $fsm0.wall) + $fsm0.offset);
+            $fsm0.timer = setTimeout($fsm0.loop, $fsm0.delay);
         } else {
-            console.log('runtime: ' + (performance.now() - $fsm[0].t0));
+            console.log('runtime: ' + (performance.now() - $fsm0.t0));
         }
         return;
     }
-    $fsm[0].direction = $fsm[8].alternatives[$fsm[0].random() * $fsm[8].alternatives.length | 0];
-    $fsm[0].route.push([
-        $fsm[0].direction[0] + $fsm[0].x,
-        $fsm[0].direction[1] + $fsm[0].y
+    $fsm0.direction = $fsm8.alternatives[$fsm0.random() * $fsm8.alternatives.length | 0];
+    $fsm0.route.push([
+        $fsm0.direction[0] + $fsm0.x,
+        $fsm0.direction[1] + $fsm0.y
     ]);
-    $fsm[0].ctx.lineTo(($fsm[0].direction[0] + $fsm[0].x) * ($fsm[0].pathWidth + $fsm[0].wall) + $fsm[0].offset, ($fsm[0].direction[1] + $fsm[0].y) * ($fsm[0].pathWidth + $fsm[0].wall) + $fsm[0].offset);
-    $fsm[0].map[($fsm[0].direction[1] + $fsm[0].y) * 2][($fsm[0].direction[0] + $fsm[0].x) * 2] = true;
-    $fsm[0].map[$fsm[0].direction[1] + $fsm[0].y * 2][$fsm[0].direction[0] + $fsm[0].x * 2] = true;
-    $fsm[0].ctx.stroke();
-    $fsm[0].timer = setTimeout($fsm[0].loop, $fsm[0].delay);
+    $fsm0.ctx.lineTo(($fsm0.direction[0] + $fsm0.x) * ($fsm0.pathWidth + $fsm0.wall) + $fsm0.offset, ($fsm0.direction[1] + $fsm0.y) * ($fsm0.pathWidth + $fsm0.wall) + $fsm0.offset);
+    $fsm0.map[($fsm0.direction[1] + $fsm0.y) * 2][($fsm0.direction[0] + $fsm0.x) * 2] = true;
+    $fsm0.map[$fsm0.direction[1] + $fsm0.y * 2][$fsm0.direction[0] + $fsm0.x * 2] = true;
+    $fsm0.ctx.stroke();
+    $fsm0.timer = setTimeout($fsm0.loop, $fsm0.delay);
 };
-$fsm[0].settings.display();
-$fsm[0].loop();
-setInterval($fsm[0].settings.check, 400);
+$fsm0.settings.display();
+$fsm0.loop();
+setInterval($fsm0.settings.check, 400);
 window.onload = function () {
-    $fsm[9] = runtime.create(arguments);
-    $fsm[0].t0 = performance.now();
-    console.log('loading time: ' + $fsm[0].t0);
+    $fsm9 = fsm.create(arguments);
+    $fsm0.t0 = performance.now();
+    console.log('loading time: ' + $fsm0.t0);
 };

@@ -93,6 +93,7 @@ const Syntax = {
 
 var Singleton = (function() {
 	var scopeChain;
+	var scopeObjs;
 
 	return {
 		getScopeChain: function() {
@@ -100,7 +101,7 @@ var Singleton = (function() {
 				scopeChain = [new Array()];
 			}
 			return scopeChain;
-		}
+		},
 	}
 })();
 
@@ -109,16 +110,40 @@ var g = global;
 g['document'] = undefined;
 g['window'] = undefined;
 g['performance'] = undefined;
-var referencedGlobals = [];
+g['alert'] = undefined;
 
+var referencedGlobals = [];
 var statementScope = {
 	ForStatement: []
 };
+var scopeObjs = (function() {
+	var scopeObjs = new Array();
+	return {
+		pushScope: function(parent, scope_num) {
+			var newScope = new Array();
+			if (parent.left) {
+				newScope.node = parent.left;
+				newScope.scope_num = scope_num;
+				scopeObjs.push(newScope);
+			}
+		},
+		popScope: function() {
+			return scopeObjs.pop();
+		},
+		push: function(scopeId) {
+			var currentScopeObjs = scopeObjs[scopeObjs.length - 1];
+			if (currentScopeObjs.scope_num != scopeId && currentScopeObjs.indexOf(scopeId) == -1) {
+				currentScopeObjs.push(scopeId);
+			}
+		}
+	}
+})();
 
 // Define prototype
 Array.prototype.getScopeStatement = function (name) {
 	var scopeId = this.length - 1;
 	var argId = -1;
+	// find scopeId from the scope chain or the arguments
 	for (; scopeId > 0; scopeId--) {
 		if (this[scopeId].indexOf(name) != -1) {
 			break;
@@ -129,13 +154,14 @@ Array.prototype.getScopeStatement = function (name) {
 			}
 		}
 	}
-	debug.log('[getScopeStatement] $fsm' + this[scopeId].ref_num + '.' + name);
+	debug.log('[getScopeStatement] $fsm' + scopeId + '.' + name);
 	if (argId == -1) {
 		//if (scopeId < this.length) {
 		if (scopeId > 0) {
 			debug.log('[getScopeStatement] local variable declaration in the scope');
+			scopeObjs.push(scopeId);
 			return new MemberExpression(false,
-					new Identifier('$fsm' + this[scopeId].ref_num),
+					new Identifier('$fsm' + scopeId),
 					new Identifier(name)
 					);
 		} else {
@@ -148,8 +174,10 @@ Array.prototype.getScopeStatement = function (name) {
 		}
 	} else {
 		debug.log('[getScopeStatement] variable is an argument');
+		scopeObjs.push(scopeId);
 		//return new MemberExpression(true, ('$fsm' + scopeId), 
-		return new Identifier('$fsm' + this[scopeId].ref_num + '.$arguments' + argId);
+		//return new Identifier('$fsm' + scopeId+ '.$arguments' + argId); // OPT ME: convert to an AST node
+		return new Identifier(name); // OPT ME: convert to an AST node
 	}
 };
 
@@ -162,6 +190,16 @@ Array.prototype.pushIdentical = function(e) {
 		this.push(e);
 	}
 }
+
+/*
+Array.prototype.pushNextTo = function(node, newNode) {
+	var idx = this.indexOf(node);
+	for (var i = this.length - 1; i > idx; i--) {
+		this[i + 1] = this[i];
+	}
+	this[idx + 1] = newNode;
+}
+*/
 
 // Util functions
 function isNewScope(node) {
@@ -193,7 +231,6 @@ function printScope(scope, node){
 
 function traceInstrument(code) {
 	var ast = esprima.parse(code);
-	var ref_num = 0;
 	var scope_num = 0;
 	//var scopeChain = [];
 	var scopeChain = Singleton.getScopeChain();
@@ -203,7 +240,6 @@ function traceInstrument(code) {
 			if (node.type == Syntax.FunctionExpression) {
 			//node.type == Syntax.Program ||
 				// Instrument a creation code
-				ref_num++;
 				scope_num++;
 
 				// Make new scope to the scope chain
@@ -214,8 +250,8 @@ function traceInstrument(code) {
 						scope.args.push(node.params[i].name);
 					}
 				}
-				scope.ref_num = ref_num;
 				scopeChain.push(scope);
+				scopeObjs.pushScope(parent, scope_num);
 			}
 
 			// FunctionDeclaration -> FunctionExpression
@@ -263,7 +299,7 @@ function traceInstrument(code) {
 									'=',
 									/*
 									new MemberExpression(false,
-										new Identifier('$fsm' + scopeChain[scopeId].ref_num),
+										new Identifier('$fsm' + scopeId),
 										new Identifier(node.declarations[i].id.name)
 										),
 									*/
@@ -291,6 +327,13 @@ function traceInstrument(code) {
 				}
 			}
 
+			// Event Handler
+			if (node.type == Syntax.Identifier) {
+				if (['addEventListener', 'onclick', 'onchange', 'onmouseover', 'onmouseout', 'onkeydown', 'onload', 'setTimeout'].includes(node.name)){
+					node.name = 'fsm_' + node.name;
+				}
+			}
+
 			if (STATELESS) {
 				// Flags
 				if (node.type == Syntax.ForStatement) {
@@ -311,10 +354,10 @@ function traceInstrument(code) {
 					signature += '$fsm' + i + ' = runtime.get(JSON.stringify($' + i + '.key));';
 				}
 				*/
-				signature = '$fsm' + scopeChain[scope_num].ref_num + ' = fsm.create(arguments)'; // OPT ME: conver to AST node
+				signature = 'var $fsm' + scope_num+ ' = $fsm.create(arguments)'; // OPT ME: convert to an AST node
 				signature = esprima.parse(signature).body[0];
 
-				// Interleave signature
+				// Interleave the signature
 				var shifting_body = node.body;
 				// Find real code body
 				while(shifting_body.type) {
@@ -323,10 +366,11 @@ function traceInstrument(code) {
 				shifting_body.unshift(signature); // Interleave at the first line
 				//printScope(currentScope, node);
 
+
 				// scope chain
 				//var currentScope = scopeChain.pop();
 				scopeChain.pop();
-				
+				//scopeObjs.popScope();
 				scope_num--;
 			}
 
@@ -360,24 +404,59 @@ function traceInstrument(code) {
 				}
 				// 
 				if (parent.type == Syntax.Property && parent.key == node) return;
-				if (parent.type != Syntax.MemberExpression ||
-					parent.object == node) {
+				if (parent.type != Syntax.MemberExpression || parent.object == node) {
 					// a.b.c -> $n.a.b.c
 					debug.log('[Identifier] !MemberExpression || parent.object = node');
 					var replaced = scopeChain.getScopeStatement(node.name);
 					return replaced;
 				}
 				if (parent.type == Syntax.MemberExpression && parent.computed == true && parent.property == node) {
+					// 
 					debug.log('[Identifier] MemberExpression && parent.computed = true && parent.property = node');
 					var replaced = scopeChain.getScopeStatement(node.name);
 					return replaced;
 				}
 			}
 
-			if (STATELESS) {
-				// Flags
-				if (node.type == Syntax.ForStatement) {
-					statementScope.ForStatement.pop();
+			// type: AssignmentExpression
+			if (node.type == Syntax.ExpressionStatement && node.expression.type == Syntax.AssignmentExpression && isNewScope(node.expression.right)) {
+				//console.log(parent);
+				var scopeObj = scopeObjs.popScope();
+				var currentScope = scopeObj.node.object.name.substring(4);
+				if (currentScope != 0) {
+					/*
+				parent.body.push(new ExpressionStatement(new AssignmentExpression(
+					'=',
+					scopeObj.node,
+					new Identifier('test')
+				)));
+				*/
+					var exps = [node];
+					if (scopeObj.length > 0) {
+						exps.push(new ExpressionStatement(new AssignmentExpression(
+							'=',
+							new MemberExpression(false, scopeObj.node, new Identifier('$scopeObj')),
+							new Identifier('new Object()') // OPT ME: convert to an AST node
+						)));
+					}
+					for (var i = 0; i < scopeObj.length; i++) {
+						//if (currentScope == scopeObj[i]) continue;
+						exps.push(new ExpressionStatement(new AssignmentExpression(
+							'=',
+							new MemberExpression(false, scopeObj.node, new Identifier('$scopeObj.$fsm' + scopeObj[i])),
+							new Identifier('$fsm.getScopeObj($fsm' + scopeObj[i] + ')') // OPT ME: convert to an AST node
+						)));
+					}
+					return new BlockStatement(
+						exps
+					);
+				}
+
+				if (STATELESS) {
+					// Flags
+					if (node.type == Syntax.ForStatement) {
+						statementScope.ForStatement.pop();
+					}
 				}
 			}
 		}

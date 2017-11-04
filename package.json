@@ -8,19 +8,17 @@
   },
   "dependencies": {
     "babel-polyfill": "^6.23.0",
+    "dom-parser": "^0.1.5",
     "escodegen": "^1.8.1",
     "esmorph": "0.0.1",
     "estraverse": "^4.2.0",
     "file-api": "^0.10.4",
     "filereader": "^0.10.3",
-    "html-minifier": "^3.5.5",
     "json-fn": "^1.1.1",
-    "minifier": "^0.8.1",
     "performance-now": "^2.1.0",
     "virtual-dom": "^2.1.1",
     "webpack": "^3.3.0",
-    "xmlhttprequest": "^1.8.0",
-    "xmlserializer": "^0.6.0"
+    "xmlhttprequest": "^1.8.0"
   },
   "devDependencies": {},
   "scripts": {

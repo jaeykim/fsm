@@ -1,2 +1,1 @@
-var a = new Object();
-a.test(match[8])
+var a = 10;

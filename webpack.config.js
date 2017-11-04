@@ -15,9 +15,8 @@ module.exports = {
 	},
 	plugins: [
 		new webpack.ProvidePlugin({
-			fsm: 'fsm',
-			runtime: 'runtime',
-			$fsm: '$fsm'
+			$fsm: '$fsm',
+			$fsm0: '$fsm0'
 		}),
 		new webpack.DefinePlugin({
 			WEB: JSON.stringify(true),
