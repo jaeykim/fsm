@@ -1,9 +1,9 @@
 var fs = require("fs");
 var instUtil = require("./instUtil.js");
 var glob_jscode = "";
+var glob_event_attribs = new Array();
 
 main();
-
 function main(){
 	// Read raw HTML file to text
 	if (  process.argv.length > 2 ) {
@@ -20,9 +20,12 @@ function main(){
 
 	// <script> ... </script> case..
 	var instHTML = instScript(compressedHTML);
-
 	var script = getScript(instHTML);
-	saveScript(fin, script);
+	var source   = fin.substring(fin.lastIndexOf("/")).substring(0, fin.lastIndexOf(".")) + ".js";
+
+	saveScript( "./domtree/", source, script);
+	//saveScript( "./inst/", source, glob_jscode);
+
 }
 
 function instScript( html ){
@@ -30,6 +33,8 @@ function instScript( html ){
 	var ret = html, src;
 	for( var regex_res = regex.exec(html) ; regex_res ; regex_res = regex.exec(html) ){
 		var scriptElem = regex_res[0];
+		if( !scriptElem.startsWith("<script")) continue;
+		
 		var startTag = scriptElem.substring(0, scriptElem.indexOf(">") + 1);
 		var innerHTML = scriptElem.substring(scriptElem.indexOf(">") + 1, regex_res[0].lastIndexOf("<"));
 		var endTag = scriptElem.substring(regex_res[0].lastIndexOf("<"));
@@ -43,50 +48,45 @@ function instScript( html ){
 			srcstr = srcstr.substr(srcstr.indexOf("\"") + 1);
 			var filename = srcstr.substr( 0, srcstr.indexOf("\""));
 			var jscodeSrc = fs.readFileSync( filename, "utf8");
-
-			// < src="[filename len]">
+			
+			// <script src="[filename len]">
 			//  123456              7
 			startTag_replace = startTag.substr(0, srcind) + startTag.substr(srcind + 7 + filename.length);
 			innerHTML_replace = jscodeSrc + "\n" + innerHTML_replace;
 		}
+		glob_jscode += innerHTML_replace + "\n\n";
 
-		glob_jscode += innerHTML_replace + "\n";
-
-		//innerHTML_replace = instUtil.traceInstrument(innerHTML_replace);
-
-		var scriptElem_replace = startTag_replace + innerHTML_replace + endTag;
 		ret = ret.replace( scriptElem,"");
-		//console.log( "orig : ", JSON.stringify(scriptElem));
-		//console.log( "repl : ", JSON.stringify(scriptElem_replace));
 	}
 	return ret;
 }
 
 function getScript( rawHTML ){
 	var script = 
-		"// traceInstrument of javascript code \n" + 
-		instUtil.traceInstrument(glob_jscode) + "\n\n" +
 		"// restore Dom object \n" + 
 		"var rawHTML = " + JSON.stringify(rawHTML) + ";\n"+
-		"window.onload = $fsm.restoreDOM(rawHTML);\n";
+		"$fsm.restoreDOM(rawHTML);\n\n" +
+		"// traceInstrument of javascript code \n" + 
+		instUtil.traceInstrument(glob_jscode) + "\n\n" +
+		"// Event attributes re-register \n" + 
+		"$fsm.registerEventAttribs()";
+		
 	return script;
 }
 
-function saveScript(fin, script){
-	var save_dir = "./domtree/";
-	var source   = fin.substring(0, fin.lastIndexOf(".")) + ".js";
+function saveScript(path, filename, script){
 	
-	if (!fs.existsSync(save_dir)) {
-		fs.mkdirSync(save_dir);
+	if (!fs.existsSync(path)) {
+		fs.mkdirSync(path);
 	}
 	
-	fs.writeFile(save_dir + source, script, function(err) {
+	fs.writeFile(path + filename, script, function(err) {
 		if( err ){
 			return console.error(err);
 		}
 		else {
-			console.log( "convert : " + fin);
-			console.log( "source : " + save_dir + source);
+			console.log( "output : " + path + filename);
 		}
 	});
 }
+
