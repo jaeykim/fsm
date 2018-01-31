@@ -91,7 +91,7 @@ const Syntax = {
 };
 
 
-var Singleton = (function() {
+function createSingleton() {
 	var scopeChain;
 	var scopeObjs;
 
@@ -103,7 +103,8 @@ var Singleton = (function() {
 			return scopeChain;
 		},
 	}
-})();
+};
+var Singleton = createSingleton();
 
 //var g = window; // node: global
 var g = global;
@@ -116,13 +117,19 @@ var referencedGlobals = [];
 var statementScope = {
 	ForStatement: []
 };
-var scopeObjs = (function() {
+function createScopeObjs() {
 	var scopeObjs = new Array();
 	return {
 		pushScope: function(parent, scope_num) {
 			var newScope = new Array();
 			if (parent.left) {
 				newScope.node = parent.left;
+				newScope.scope_num = scope_num;
+				scopeObjs.push(newScope);
+			}
+			else if (parent.callee) { // For immediately-invoked function expression
+				if(parent.callee.id)newScope.node = parent.callee.id;
+				else newScope.node = parent.callee;
 				newScope.scope_num = scope_num;
 				scopeObjs.push(newScope);
 			}
@@ -137,7 +144,8 @@ var scopeObjs = (function() {
 			}
 		}
 	}
-})();
+};
+var scopeObjs = createScopeObjs();
 
 // Define prototype
 Array.prototype.getScopeStatement = function (name) {
@@ -229,15 +237,248 @@ function printScope(scope, node){
 	}
 }
 
+function getName(node){
+	var name = "";
+	if(node.hasOwnProperty('object')){
+		name += getName(node.object);
+	}
+	else{
+		name += node.name;
+	}
+	if(node.hasOwnProperty('property')){
+		name += "." + node.property.name;
+	}
+	return name;
+}
+
 function traceInstrument(code) {
 	var ast = esprima.parse(code);
+
+	/* To save closure information */
+	var varScope = (function() {
+		var varScope = [new Array(), new Object()];
+		var currentScope = varScope;
+		var anonymous = 0;
+		return {
+			pushScope: function(id) {
+				if(currentScope[1].hasOwnProperty(id)){
+					currentScope = currentScope[1][id];
+					return;
+				}
+				if(id == undefined)id = anonymous++;
+				currentScope[1][id] = [new Array(), new Object()];
+				currentScope[1][id].parent = currentScope;
+				currentScope = currentScope[1][id];
+			},
+			popScope: function() {
+				currentScope = currentScope.parent;
+			},
+			pushVar: function(id, assign) {
+				if(assign == undefined){
+					currentScope[0].push([id, false]);
+					return;
+				}
+				var temp = currentScope;
+				while(temp.parent){
+					for(var i = temp[0].length - 1; i >= 0; i--){
+						if(temp[0][i][0] == id)return;
+					}
+					temp = temp.parent;
+				}
+				for(var i = temp[0].length - 1; i >= 0; i--){
+					if(temp[0][i][0] == id)return;
+				}
+				temp[0].push([id, false]);
+			},
+			setClosure: function(id, reset) {
+				for(var i = currentScope[0].length - 1; i >= 0; i--){
+					if(id == currentScope[0][i][0]){
+						if(reset)currentScope[0][i][1] = false;
+						return false;
+					}
+				}
+				for(var i = currentScope.parent; i != varScope && i != undefined; i = i.parent){
+					for(var j = i[0].length - 1; j >= 0; j--){
+						if(id == i[0][j][0]){
+							if(reset){
+								return i[0][j][1] = false;
+							}
+							return i[0][j][1] = true;
+						}
+					}
+				}
+				return false;
+			},
+			isClosure: function(id) {
+				if(!currentScope.parent)return true;
+				if(id.startsWith('this.'))return false;
+				for(var i = currentScope[0].length - 1; i >= 0; i--){
+					if(id == currentScope[0][i][0]){
+						return currentScope[0][i][1];
+					}
+				}
+				for(var i in currentScope[1]){
+					if(id == i)return false;
+				}
+				for(var i = currentScope.parent; i != varScope && i != undefined; i = i.parent){
+					for(var j = i[0].length - 1; j >= 0; j--){
+						if(id == i[0][j][0]){
+							return i[0][j][1];
+							//return true;
+						}
+					}
+				}
+				return false;
+			},
+			isClosureScope: function() {
+				if(!currentScope.parent)return true;
+				for(var i = currentScope[0].length - 1; i >= 0; i--){
+					if(currentScope[0][i][1])return true;
+				}
+				return false;
+			},
+			isGlobal: function(id) {
+				var temp = currentScope;
+				if(temp){
+					while(temp.parent){
+						for(var i = temp[0].length - 1; i >= 0; i--){
+							if(id == temp[0][i][0])return false;
+						}
+						for(var i in temp[1]){
+							if(id == i)return false;
+						}
+						temp = temp.parent;
+					}
+					for(var i = temp[0].length - 1; i >= 0; i--){
+						if(id == temp[0][i][0])return true;
+					}
+					for(var i in temp[1]){
+						if(id == i)return true;
+					}
+				}
+				else{
+					for(var i = varScope[0].length - 1; i >= 0; i--){
+						if(id == varScope[0][i][0])return true;
+					}
+					for(var i in varScope[1]){
+						if(id == i)return true;
+					}
+				}
+				return true;
+			}
+		}
+	})();
+
+
+	var anonymous = 0;
+	/* indirect eval list */
+	var indirectEval = [];
+	
+	/* First traverse to find closure variables */
+	(function traverse(ast){
+	estraverse.traverse(ast, {
+		enter: function (node, parent) {
+			if (isNewScope(node)) {
+				if(parent.type == Syntax.VariableDeclarator) varScope.pushScope(parent.id.name);
+				else if(parent.type == Syntax.AssignmentExpression){
+					varScope.pushScope(getName(parent.left));
+				}
+				//else if(parent.type == Syntax.ReturnStatement || parent.type == Syntax.CallExpression){
+				else if(node.id == null){
+					varScope.pushScope();
+				}
+				else {
+					varScope.pushScope(node.id.name);
+				}
+				for(var i = 0; i < node.params.length; i++){
+					varScope.pushVar(getName(node.params[i]));
+				}
+			}
+
+			if (node.type == Syntax.VariableDeclarator) {
+				varScope.pushVar(node.id.name);
+			}
+			if (node.type == Syntax.AssignmentExpression) {
+				varScope.pushVar(getName(node.left), 'assign');
+				if(node.right.name == 'eval' || indirectEval.indexOf(node.right.name) > -1){
+					if(indirectEval.indexOf(node.left.name))indirectEval.push(node.left.name);
+				}
+			}
+
+			if (node.type == Syntax.Identifier && parent.type != Syntax.VariableDeclarator) {
+				varScope.setClosure(node.name);
+			}
+
+			if (node.type == Syntax.Identifier && parent.type == Syntax.VariableDeclarator) {
+				if(node.name == 'eval' || indirectEval.indexOf(node.name) > -1){
+					if(indirectEval.indexOf(parent.id.name) < 0)indirectEval.push(parent.id.name);
+				}
+			}
+
+			if (node.type == Syntax.Identifier && parent.type == Syntax.CallExpression && node.name == 'eval') {
+				if(parent.arguments[0].type == Syntax.Literal){
+					var evalCode = parent.arguments[0].value;
+					var evalAst = esprima.parse(evalCode);
+					traverse(evalAst);
+				}
+				/*
+				else if(parent.arguments[0].type == Syntax.Identifier){
+					evalString.push({id:parent.arguments[0].name, value:null});
+				}
+				*/
+			}
+		},
+		leave: function (node, parent) {
+			if (isNewScope(node)) {
+				varScope.popScope();
+			}
+			if (node.type == Syntax.ForStatement && node.init && node.init.type == Syntax.VariableDeclaration){
+				for(var i = 0; i < node.init.declarations.length; i++){
+					varScope.setClosure(node.init.declarations[i].id.name, true);
+				}
+			}
+		}
+	});
+	})(ast);
+
 	var scope_num = 0;
 	//var scopeChain = [];
 	var scopeChain = Singleton.getScopeChain();
 
+	// To handle catch clause
+	var catchArg;
+	var isCatchBlock = false;
+
+	(function replacement(ast){
 	estraverse.replace(ast, {
 		enter: function (node, parent) {
+
 			if (node.type == Syntax.FunctionExpression) {
+				
+				/* varScope push scope */
+				if(parent.type == Syntax.VariableDeclarator){
+					var name = getName(parent.id);
+					if(name.startsWith("$fsm"))name = name.slice(6);
+					name = name.replace('fsm_', '');
+					varScope.pushScope(name);
+				}
+				else if(parent.type == Syntax.AssignmentExpression){
+					var name = getName(parent.left);
+					if(name.startsWith("$fsm"))name = name.slice(6);
+					name = name.replace('fsm_', '');
+					varScope.pushScope(name);
+				}
+				else if(node.id == null){
+					varScope.pushScope(anonymous++);
+				}
+				else{
+					var name = getName(node.id);
+					if(name.startsWith("$fsm"))name = name.slice(6);
+					name = name.replace('fsm_', '');
+					varScope.pushScope(name);
+				}
+				
+
 			//node.type == Syntax.Program ||
 				// Instrument a creation code
 				scope_num++;
@@ -274,12 +515,26 @@ function traceInstrument(code) {
 				var currentScope = scopeChain[scopeChain.length - 1];
 				var scopeId = scopeChain.length - 1;
 				for (var i = 0; i < node.declarations.length; i++) {
+					/* Do nothing if parent type is forstatement */
+					if(parent.type == Syntax.ForStatement)return node;
+
 					currentScope.push(node.declarations[i].id.name);
 					debug.log('[VariableDeclarator] ' + node.declarations[i].id.name);
 					debug.log(node.declarations[i]);
 					debug.log('[scopeChain]');
 					debug.log(scopeChain);
 					var replaced = undefined;
+
+					/* If the variable is not a closure variable or global variable, VariableDeclaralation remains */
+					if (!varScope.isClosure(node.declarations[i].id.name) || varScope.isGlobal(node.declarations[i].id.name)){
+						replaced = new VariableDeclaration(
+									[new VariableDeclarator(
+										node.declarations[i].id, node.declarations[i].init)],
+									node.kind
+						);
+						exps.push(replaced);
+						continue;
+					}
 					if (node.declarations[i].init) {
 						debug.log('[VariableDeclarator] varDecl has node.init');
 						//var right = node.declarations[i].init;
@@ -334,6 +589,9 @@ function traceInstrument(code) {
 				}
 			}
 
+			// For CatchClause
+			if (node.type == Syntax.CatchClause)isCatchBlock = true;
+
 			if (STATELESS) {
 				// Flags
 				if (node.type == Syntax.ForStatement) {
@@ -344,6 +602,10 @@ function traceInstrument(code) {
 				}
 			}
 		}, leave: function(node, parent) {
+
+			// for CatchClause
+			if (node.type == Syntax.CatchClause)isCatchBlock = false;
+			
 			// Pop the current scope
 			if (isNewScope(node)) {
 				
@@ -354,31 +616,75 @@ function traceInstrument(code) {
 					signature += '$fsm' + i + ' = runtime.get(JSON.stringify($' + i + '.key));';
 				}
 				*/
-				signature = 'var $fsm' + scope_num+ ' = $fsm.create(arguments)'; // OPT ME: convert to an AST node
-				signature = esprima.parse(signature).body[0];
 
-				// Interleave the signature
-				var shifting_body = node.body;
-				// Find real code body
-				while(shifting_body.type) {
-					shifting_body = shifting_body.body;
+				/* Create "$fsm.create" code only if the scope has closure variables */
+				if(varScope.isClosureScope()){
+					signature = 'var $fsm' + scope_num+ ' = $fsm.create(arguments)'; // OPT ME: convert to an AST node
+					signature = esprima.parse(signature).body[0];
+
+					// Interleave the signature
+					var shifting_body = node.body;
+					// Find real code body
+					while(shifting_body.type) {
+						shifting_body = shifting_body.body;
+					}
+					shifting_body.unshift(signature); // Interleave at the first line
+					//printScope(currentScope, node);
 				}
-				shifting_body.unshift(signature); // Interleave at the first line
-				//printScope(currentScope, node);
 
 
 				// scope chain
 				//var currentScope = scopeChain.pop();
+				
+				varScope.popScope();
 				scopeChain.pop();
+
 				//scopeObjs.popScope();
 				scope_num--;
 			}
 
 			// type: Identifier
 			if (node.type == Syntax.Identifier) {
+
+				/* Do nothing if identifier's name id 'arguments' */
+				if(node.name == "arguments")return;
+
+				/* Instrument string literal argument of eval function */
+				if(node.name == "eval" && parent.type == Syntax.CallExpression){
+					if(parent.arguments[0].type == Syntax.Literal){
+						var evalCode = parent.arguments[0].value;
+						var evalAst = esprima.parse(evalCode);
+						replacement(evalAst);
+						var newCode = escodegen.generate(evalAst);
+						parent.arguments[0].value = newCode;
+					}
+				}
+				if(indirectEval.indexOf(node.name) > -1 && parent.type == Syntax.CallExpression){
+					if(parent.arguments[0].type == Syntax.Literal){
+						var evalCode = parent.arguments[0].value;
+						var tempScopeObjs = scopeObjs;
+						var tempSingleton = Singleton;
+						scopeObjs = createScopeObjs();
+						Singleton = createSingleton();
+						var newCode = traceInstrument(evalCode);
+						Singleton = tempSingleton;
+						scopeObjs = tempScopeObjs;
+						parent.arguments[0].value = newCode;
+					}
+				}
+
 				debug.log('[Identifier] ' + node.name);
 				debug.log('[Identifier] parent:');
 				debug.log(parent);
+
+				/* Handle cacth block */
+				if (parent.type == Syntax.CatchClause){
+					catchArg = node.name;
+					return;
+				}
+				if (isCatchBlock && node.name == catchArg)return;
+
+				if (parent.type == Syntax.LabeledStatement || parent.type == Syntax.BreakStatement || parent.type == Syntax.ContinueStatement)return;
 				if (node.name in g && referencedGlobals.indexOf(node.name) == -1) {
 					return;
 				}
@@ -404,6 +710,9 @@ function traceInstrument(code) {
 				}
 				// 
 				if (parent.type == Syntax.Property && parent.key == node) return;
+
+				//if (!varScope.isClosure(node.name) && !varScope.isGlobal(node.name))return;
+				if (!varScope.isClosure(node.name) || varScope.isGlobal(node.name))return;
 				if (parent.type != Syntax.MemberExpression || parent.object == node) {
 					// a.b.c -> $n.a.b.c
 					debug.log('[Identifier] !MemberExpression || parent.object = node');
@@ -420,9 +729,39 @@ function traceInstrument(code) {
 
 			// type: AssignmentExpression
 			if (node.type == Syntax.ExpressionStatement && node.expression.type == Syntax.AssignmentExpression && isNewScope(node.expression.right)) {
+
+				/* If the function is global, change FunctionExpression to FunctionDeclaration */
+				if (node.expression.left.name && varScope.isGlobal(node.expression.left.name)){
+					return new FunctionDeclaration(
+							node.expression.left,
+							node.expression.right.params,
+							node.expression.right.body,
+							node.expression.right.generator,
+							node.expression.right.expression,
+							node.expression.right.async
+							);
+				}
+
+				if (node.expression.right.type == Syntax.FunctionExpression && scope_num > 0) {
+					if(!node.expression.left.object || !node.expression.left.object.type == Syntax.ThisExpression){
+						return new VariableDeclaration(
+								[new VariableDeclarator(
+									node.expression.left, node.expression.right)],
+								"var"
+								);
+					}
+				}
+
 				//console.log(parent);
 				var scopeObj = scopeObjs.popScope();
-				var currentScope = scopeObj.node.object.name.substring(4);
+				var currentScope = scopeObj.node.object;
+				if(!currentScope)return;
+				while(currentScope.hasOwnProperty("object")){
+					currentScope = currentScope.object;
+				}
+				//var currentScope = scopeObj.node.object.name.substring(4);
+				if(currentScope.name)
+					currentScope = currentScope.name.substring(4);
 				if (currentScope != 0) {
 					/*
 				parent.body.push(new ExpressionStatement(new AssignmentExpression(
@@ -432,6 +771,8 @@ function traceInstrument(code) {
 				)));
 				*/
 					var exps = [node];
+
+					/* Comment due to some error
 					if (scopeObj.length > 0) {
 						exps.push(new ExpressionStatement(new AssignmentExpression(
 							'=',
@@ -447,6 +788,7 @@ function traceInstrument(code) {
 							new Identifier('$fsm.getScopeObj($fsm' + scopeObj[i] + ')') // OPT ME: convert to an AST node
 						)));
 					}
+					*/
 					return new BlockStatement(
 						exps
 					);
@@ -461,6 +803,7 @@ function traceInstrument(code) {
 			}
 		}
 	});
+	})(ast);
 	debug.log('AST');
 	debug.log(ast);
 	//console.log(ast);
@@ -502,4 +845,26 @@ function ExpressionStatement(expression) {
 function BlockStatement(statementListItem) {
 	this.type = Syntax.BlockStatement;
 	this.body = statementListItem;
+}
+
+function VariableDeclarator(id, init) {
+	this.type = Syntax.VariableDeclarator;
+	this.id = id;
+	this.init = init;
+}
+
+function VariableDeclaration(declarations, kind) {
+	this.type = Syntax.VariableDeclaration;
+	this.declarations = declarations;
+	this.kind = kind;
+}
+
+function FunctionDeclaration(id, params, body, generator, expression, async){
+	this.type = Syntax.FunctionDeclaration;
+	this.id = id;
+	this.params = params;
+	this.body = body;
+	this.generator = generator;
+	this.expression = expression;
+	this.async = async;
 }
