@@ -6,7 +6,10 @@ var fs = require('fs');
 var esprima = require('esprima');
 var estraverse = require('estraverse');
 var escodegen = require('escodegen');
-var debug = require('./debug.js');
+
+function print(str){
+	console.log(str);
+}
 
 const save_dir = './inst/';
 const STATELESS = false;
@@ -90,724 +93,1147 @@ const Syntax = {
 	WithStatement: 'WithStatement'
 };
 
+var scopeList = [];
 
-function createSingleton() {
-	var scopeChain;
-	var scopeObjs;
-
+function scopeTree() {
+	var scopeRoot = {
+		type: "window",
+		name: "window",
+		val: {},
+		thisList: ["this"],
+		depth: 0
+	};
+	var currentScope = scopeRoot;
+	var anonymous = 0;
+	var depth = 0;
+	function createElement(type, name, curScope){
+		if(type == "function")depth++;
+		return {
+			type: type,
+			name: name,
+			val: {},
+			thisList: ["this"],
+			isClosure: false,
+			isReturnFunction: false,
+			depth: depth,
+			parent: (curScope ? curScope : currentScope)
+		}
+	}
+	function findVarScope(name){
+		var temp = currentScope;
+		while(temp){
+			if(temp.type != 'object'){
+				for(var _name in temp.val){
+					if(_name == name)return temp;
+				}
+			}
+			temp = temp.parent;
+		}
+		for(var index = scopeList.length-1; index >= 0; index--){
+			var temp = scopeList[index];
+			while(temp){
+				for(var _name in temp.val){
+					if(_name == name)return temp;
+				}
+				temp = temp.parent;
+			}
+		}
+		if(name == 'window')return scopeRoot;
+		return null;
+	}
+	function findVar(name){
+		var found = currentScope;
+		var temp_name = name[0];
+		while(found){
+			for(var prop in found.val){
+				if(prop == name[0]){
+					temp_name = name[0];
+					name.splice(0, 1);
+					found = found.val[temp_name];
+					break;
+				}
+			}
+			found = found.parent;
+		}
+		if(name.length == 0){
+			name.push(temp_name);
+			return found;
+		}
+		if(!found)return found;
+		while(name.length){
+			var error = true;
+			for(var prop in found.val){
+				if(prop == name[0]){
+					temp_name = name[0];
+					name.splice(0, 1);
+					found = found.val[temp_name];
+					error = false;
+					break;
+				}
+			}
+			if(error){
+				console.log('findVar error');
+				return null;
+			}
+		}
+		name.push(temp_name);
+		return found;
+	}
 	return {
-		getScopeChain: function() {
-			if (!scopeChain) {
-				scopeChain = [new Array()];
-			}
-			return scopeChain;
+		findVarScope: findVarScope,
+		getScopeRoot: function() {
+			return scopeRoot;
 		},
-	}
-};
-var Singleton = createSingleton();
-
-//var g = window; // node: global
-var g = global;
-g['document'] = undefined;
-g['window'] = undefined;
-g['performance'] = undefined;
-g['alert'] = undefined;
-
-var referencedGlobals = [];
-var statementScope = {
-	ForStatement: []
-};
-function createScopeObjs() {
-	var scopeObjs = new Array();
-	return {
-		pushScope: function(parent, scope_num) {
-			var newScope = new Array();
-			if (parent.left) {
-				newScope.node = parent.left;
-				newScope.scope_num = scope_num;
-				scopeObjs.push(newScope);
+		getCurrentScope: function() {
+			return currentScope;
+		},
+		setCurrentScope: function(scope) {
+			currentScope = scope;
+			//depth = currentScope.depth;
+		},
+		pushVar: function(type, name, isThis){	
+			if(isThis){
+				currentScope.thisList.push(name);
+				return;
 			}
-			else if (parent.callee) { // For immediately-invoked function expression
-				if(parent.callee.id)newScope.node = parent.callee.id;
-				else newScope.node = parent.callee;
-				newScope.scope_num = scope_num;
-				scopeObjs.push(newScope);
+			if(name == 'anonymous')name = anonymous++;
+			if(currentScope.val[name] != undefined && !(currentScope.val[name].toString().includes("[native code]")))return;
+			if(type == 'object' || type == 'function' || type == 'variable' || type == 'undefined' || type == 'parameter'){
+				currentScope.val[name] = createElement(type, name);
+				if(type == "function")currentScope.val[name].val["prototype"] = createElement(type, name, currentScope.val[name]);
+			}
+			else{
+				var findScope = findVar(type.split('.'));
+				if(findScope)currentScope.val[name] = findScope;
+				else currentScope.val[name] = createElement('variable', name);
+			}
+			return name;
+		},
+		pushScope: function(name){
+			if(!currentScope.val.hasOwnProperty(name))currentScope.val[name] = createElement('object', name);
+			currentScope = currentScope.val[name];
+		},
+		popScope: function(){
+			var temp = currentScope
+			currentScope = currentScope.parent;
+			return temp.name;
+		},
+		accessVar: function(name, traverse){
+			var varScope = findVarScope(name);
+			var isThis = false;
+			var thisList = [];
+			for(var temp = currentScope; temp; temp = temp.parent){
+				thisList = thisList.concat(temp.thisList);
+			}
+			if(typeof currentScope.name == 'string' && varScope){
+				isThis = thisList.includes(currentScope.name.split('.')[0]);
+				//isThis = currentScope.name.startsWith('this.');
+			}
+			if(traverse && varScope && varScope != scopeRoot && varScope != currentScope && varScope.type == 'function' && (currentScope.isReturnFunction || isThis || varScope.val[name].type == "function" || currentScope.parent.type == 'object')){
+				varScope.isClosure = true;
+			}
+			return varScope;
+		},
+		setEventHandler: function(name){
+			var varScope = findVarScope(name);
+			if(varScope && varScope != scopeRoot){
+				varScope.isClosure = true;
+			}
+			return varScope;
+		},
+		assignVar: function(type, name){
+			var thisList = [];
+			for(var temp = currentScope; temp; temp = temp.parent){
+				thisList = thisList.concat(temp.thisList);
+			}
+			if(thisList.includes(name.split('.')[0])){
+				var varScope = currentScope;
+				if(type == 'object' || type == 'function' || type == 'variable' || type == 'undefined' || type == 'parameter'){
+					varScope.val[name] = createElement(type, name, varScope);
+					if(type == "function")varScope.val[name].val["prototype"] = createElement(type, name, varScope.val[name]);
+				}
+				else{
+					var findScope = findVar(type.split('.'));
+					if(findScope)varScope.val[name] = findScope;
+					else varScope.val[name] = createElement('variable', name, varScope);
+				}
+				return;
+			}
+			else{
+				var varScope = findVarScope(name.split('.')[0]);
+			}
+			if(!varScope){
+				scopeRoot.val[name] = createElement(type, name, varScope);
+			}
+			else{
+				var _name = name.split('.').slice(0, -1);
+				if(_name[0] == 'window')_name = _name.slice(1);
+				if(_name[0] == 'document')return;
+				while(_name.length){
+					varScope = varScope.val[_name[0]];
+					if(!varScope)return;
+					_name = _name.splice(1);
+				}
+				if(!varScope)return;
+				name = name.split('.')[name.split('.').length - 1];
+				if(type == 'object' || type == 'function' || type == 'variable' || type == 'undefined' || type == 'parameter'){
+					if(varScope.val[name] != undefined && !(varScope.val[name].toString().includes("[native code]")))return;
+					varScope.val[name] = createElement(type, name, varScope);
+					if(type == "function")varScope.val[name].val["prototype"] = createElement(type, name, varScope.val[name]);
+				}
+				else{
+					var findScope = findVar(type.split('.'));
+					if(findScope)varScope.val[name] = findScope;
+					else if(varScope.val[name] != undefined && !(varScope.val[name].toString().includes("[native code]")))return;
+					else varScope.val[name] = createElement('variable', name, varScope);
+				}
 			}
 		},
-		popScope: function() {
-			return scopeObjs.pop();
+		setReturnFunction: function(name){
+			var varScope = findVarScope(name);
+			if(varScope && varScope.val[name].type == 'function')varScope.val[name].isReturnFunction = true;
 		},
-		push: function(scopeId) {
-			var currentScopeObjs = scopeObjs[scopeObjs.length - 1];
-			if (currentScopeObjs.scope_num != scopeId && currentScopeObjs.indexOf(scopeId) == -1) {
-				currentScopeObjs.push(scopeId);
-			}
-		}
-	}
-};
-var scopeObjs = createScopeObjs();
-
-// Define prototype
-Array.prototype.getScopeStatement = function (name) {
-	var scopeId = this.length - 1;
-	var argId = -1;
-	// find scopeId from the scope chain or the arguments
-	for (; scopeId > 0; scopeId--) {
-		if (this[scopeId].indexOf(name) != -1) {
-			break;
-		} else if (this[scopeId].args) {
-			argId = this[scopeId].args.indexOf(name);
-			if (argId != -1) {
-				break;
-			}
-		}
-	}
-	debug.log('[getScopeStatement] $fsm' + scopeId + '.' + name);
-	if (argId == -1) {
-		//if (scopeId < this.length) {
-		if (scopeId > 0) {
-			debug.log('[getScopeStatement] local variable declaration in the scope');
-			scopeObjs.push(scopeId);
-			return new MemberExpression(false,
-					new Identifier('$fsm' + scopeId),
-					new Identifier(name)
-					);
-		} else {
-			// New global variable
-			debug.log('[getScopeStatement] global variable declaration in the scope');
-			return new MemberExpression(false,
-					new Identifier('$fsm0'),
-					new Identifier(name)
-				);
-		}
-	} else {
-		debug.log('[getScopeStatement] variable is an argument');
-		scopeObjs.push(scopeId);
-		//return new MemberExpression(true, ('$fsm' + scopeId), 
-		//return new Identifier('$fsm' + scopeId+ '.$arguments' + argId); // OPT ME: convert to an AST node
-		return new Identifier(name); // OPT ME: convert to an AST node
-	}
-};
-
-Array.prototype.getCurrent = function() {
-	return this[this.length - 1];
-}
-
-Array.prototype.pushIdentical = function(e) {
-	if (this.indexOf(e) == -1) {
-		this.push(e);
-	}
-}
-
-/*
-Array.prototype.pushNextTo = function(node, newNode) {
-	var idx = this.indexOf(node);
-	for (var i = this.length - 1; i > idx; i--) {
-		this[i + 1] = this[i];
-	}
-	this[idx + 1] = newNode;
-}
-*/
-
-// Util functions
-function isNewScope(node) {
-	return node.type == Syntax.FunctionDeclaration ||
-		node.type == Syntax.FunctionExpression;
-		//node.type == Syntax.Program;
-}
-
-function isStatement(node) {
-	return node.type == Syntax.ExpressionStatement ||
-		node.type == Syntax.ReturnStatement;
-}
-
-function printScope(scope, node){
-	var varsDisplay = scope.join(', ');
-	if (node.type == Syntax.Program) {
-		debug.log('Variables declared in the global scope:', 
-				varsDisplay);
-	} else {
-		if (node.id && node.id.name) {
-			debug.log('Variables declared in the function ' + node.id.name + '():',
-					varsDisplay);
-		} else {
-			debug.log('Variables declared in anonymous function:',
-					varsDisplay);
+		getDepth: function() {
+			return depth;
 		}
 	}
 }
 
 function getName(node){
-	var name = "";
-	if(node.hasOwnProperty('object')){
-		name += getName(node.object);
+	if(node.type == Syntax.Identifier)return node.name;
+	else if(node.type == Syntax.ThisExpression)return "this";
+	else if(node.type == Syntax.CallExpression || node.type == Syntax.NewExpression){
+		var name = getName(node.callee) + "(";
+		if(node.arguments.length > 0){
+			name += getName(node.arguments[0]);
+		}
+		for(var i = 1; i < node.arguments.length; i++){
+			name += ", " + getName(node.arguments[i]);
+		}
+		name += ")";
+		return name;
 	}
-	else{
-		name += node.name;
-	}
-	if(node.hasOwnProperty('property')){
-		name += "." + node.property.name;
-	}
-	return name;
+	else if(node.type == Syntax.Literal)return node.raw;
+	else if(node.type == Syntax.MemberExpression)return getName(node.object) + "." + getName(node.property);
+	else return "undefined";
 }
 
 function traceInstrument(code) {
 	var ast = esprima.parse(code);
+	var ScopeTree = scopeTree();
+	var builtInList = ["Object", "Array", "Function", "Number", "Boolean", "Symbol", "Error", "Math", "Date", "String", "RegExp"];
 
-	/* To save closure information */
-	var varScope = (function() {
-		var varScope = [new Array(), new Object()];
-		var currentScope = varScope;
-		var anonymous = 0;
-		return {
-			pushScope: function(id) {
-				if(currentScope[1].hasOwnProperty(id)){
-					currentScope = currentScope[1][id];
-					return;
+	var anonymous = 0;
+	var poppedScope;
+	estraverse.traverse(ast, {
+		enter: function(node, parent){
+			//console.log('enter===');
+			//console.log(node);
+			//print(ScopeTree.getCurrentScope());
+			//console.log('========');
+			//console.log();
+			if(node.type == Syntax.CallExpression && builtInList.includes(getName(node.callee).split('.')[0]))this.skip();
+			if(node.type == Syntax.VariableDeclarator){
+				if(!(node.init)){
+					ScopeTree.pushVar('undefined', node.id.name);
 				}
-				if(id == undefined)id = anonymous++;
-				currentScope[1][id] = [new Array(), new Object()];
-				currentScope[1][id].parent = currentScope;
-				currentScope = currentScope[1][id];
-			},
-			popScope: function() {
-				currentScope = currentScope.parent;
-			},
-			pushVar: function(id, assign) {
-				if(assign == undefined){
-					currentScope[0].push([id, false]);
-					return;
-				}
-				var temp = currentScope;
-				while(temp.parent){
-					for(var i = temp[0].length - 1; i >= 0; i--){
-						if(temp[0][i][0] == id)return;
-					}
-					temp = temp.parent;
-				}
-				for(var i = temp[0].length - 1; i >= 0; i--){
-					if(temp[0][i][0] == id)return;
-				}
-				temp[0].push([id, false]);
-			},
-			setClosure: function(id, reset) {
-				for(var i = currentScope[0].length - 1; i >= 0; i--){
-					if(id == currentScope[0][i][0]){
-						if(reset)currentScope[0][i][1] = false;
+				else{
+					var isCallExpression = (function(){
+						var temp = node.init;
+						while(temp){
+							if(temp.type == Syntax.CallExpression)return true;
+							temp = temp.object;
+						}
 						return false;
+					})();
+					if(isCallExpression){
+						ScopeTree.pushVar('variable', node.id.name);
 					}
-				}
-				for(var i = currentScope.parent; i != varScope && i != undefined; i = i.parent){
-					for(var j = i[0].length - 1; j >= 0; j--){
-						if(id == i[0][j][0]){
-							if(reset){
-								return i[0][j][1] = false;
-							}
-							return i[0][j][1] = true;
+					else{
+						switch (node.init.type){
+							case Syntax.ObjectExpression:
+								ScopeTree.pushVar('object', node.id.name);
+								break;
+							case Syntax.FunctionExpression:
+								ScopeTree.pushVar('function', node.id.name);
+								break;
+							case Syntax.Identifier:
+							case Syntax.MemberExpression:
+								ScopeTree.pushVar(getName(node.init), node.id.name);
+								break;
+							case Syntax.ThisExpression:
+								ScopeTree.pushVar('variable', node.id.name, true);
+								break;
+							case Syntax.NewExpression:
+								if(node.init.callee.name == "Object")
+									ScopeTree.pushVar('object', node.id.name);
+								else
+									ScopeTree.pushVar('variable', node.id.name);
+								break;
+							default:
+								ScopeTree.pushVar('variable', node.id.name);
 						}
 					}
 				}
-				return false;
-			},
-			isClosure: function(id) {
-				if(!currentScope.parent)return true;
-				if(id.startsWith('this.'))return false;
-				for(var i = currentScope[0].length - 1; i >= 0; i--){
-					if(id == currentScope[0][i][0]){
-						return currentScope[0][i][1];
+			}
+			else if(node.type == Syntax.AssignmentExpression){
+				if(builtInList.includes(getName(node.left).split('.')[0])){
+					this.skip();
+				}
+				var isCallExpression = (function(){
+					var temp = node.right;
+					while(temp){
+						if(temp.type == Syntax.CallExpression)return true;
+						temp = temp.object;
+					}
+					return false;
+				})();
+				if(isCallExpression){
+					ScopeTree.assignVar('variable', getName(node.left));
+				}
+				else{
+					switch (node.right.type){
+						case Syntax.ObjectExpression:
+							ScopeTree.assignVar('object', getName(node.left));
+							break;
+						case Syntax.FunctionExpression:
+							ScopeTree.assignVar('function', getName(node.left));
+							break;
+						case Syntax.Identifier:
+						case Syntax.MemberExpression:
+							ScopeTree.assignVar(getName(node.right), getName(node.left));
+							break;
+						case Syntax.NewExpression:
+							if(node.right.callee.name == "Object")
+								ScopeTree.pushVar('object', getName(node.left));
+							else
+								ScopeTree.pushVar('variable', getName(node.left));
+							break;
+						default:
+							ScopeTree.assignVar('variable', getName(node.left));
 					}
 				}
-				for(var i in currentScope[1]){
-					if(id == i)return false;
+			}
+			if(node.type == Syntax.FunctionDeclaration){
+				ScopeTree.pushVar('function', node.id.name);
+				scopeList.push(ScopeTree.getCurrentScope());
+				ScopeTree.pushScope(node.id.name);
+				for(var param_index = 0; param_index < node.params.length; param_index++){
+					ScopeTree.pushVar('parameter', node.params[param_index].name);
 				}
-				for(var i = currentScope.parent; i != varScope && i != undefined; i = i.parent){
-					for(var j = i[0].length - 1; j >= 0; j--){
-						if(id == i[0][j][0]){
-							return i[0][j][1];
-							//return true;
+			}
+			else if(node.type == Syntax.FunctionExpression && parent.type != Syntax.LogicalExpression){
+				scopeList.push(ScopeTree.getCurrentScope());
+				if(parent.id)ScopeTree.pushScope(getName(parent.id));
+				else if(parent.left){
+					var thisList = [];
+					for(var temp = ScopeTree.getCurrentScope(); temp; temp = temp.parent){
+						thisList = thisList.concat(temp.thisList);
+					}
+					var name = (getName(parent.left)).split('.');
+					if(thisList.includes(name[0]))ScopeTree.pushScope(name.join('.'));
+					else{ 
+						if(name[0] == 'window')ScopeTree.setCurrentScope(ScopeTree.findVarScope(name[0]));
+						else ScopeTree.setCurrentScope(ScopeTree.findVarScope(name[0]).val[name[0]]);
+						for(var _name = 1; _name < name.length; _name++){
+							if(!ScopeTree.getCurrentScope().hasOwnProperty(name[_name]))ScopeTree.pushVar('object', name[_name]);
+							ScopeTree.pushScope(name[_name]);
 						}
 					}
+					//ScopeTree.pushScope(getName(parent.left));
 				}
-				return false;
-			},
-			isClosureScope: function() {
-				if(!currentScope.parent)return true;
-				for(var i = currentScope[0].length - 1; i >= 0; i--){
-					if(currentScope[0][i][1])return true;
+				else if(parent.key)ScopeTree.pushScope(getName(parent.key));
+				else{
+					ScopeTree.pushScope(ScopeTree.pushVar('function', 'anonymous'));
+					anonymous++;
 				}
-				return false;
-			},
-			isGlobal: function(id) {
-				var temp = currentScope;
-				if(temp){
-					while(temp.parent){
-						for(var i = temp[0].length - 1; i >= 0; i--){
-							if(id == temp[0][i][0])return false;
-						}
-						for(var i in temp[1]){
-							if(id == i)return false;
-						}
-						temp = temp.parent;
+				for(var param_index = 0; param_index < node.params.length; param_index++){
+					ScopeTree.pushVar('parameter', node.params[param_index].name);
+				}
+			}
+			else if(node.type == Syntax.ObjectExpression && parent.type != Syntax.LogicalExpression){
+				scopeList.push(ScopeTree.getCurrentScope());
+				if(parent.id)ScopeTree.pushScope(getName(parent.id));
+				else if(parent.left){
+					var thisList = []
+					for(var temp = ScopeTree.getCurrentScope(); temp; temp = temp.parent){
+						thisList = thisList.concat(temp.thisList);
 					}
-					for(var i = temp[0].length - 1; i >= 0; i--){
-						if(id == temp[0][i][0])return true;
-					}
-					for(var i in temp[1]){
-						if(id == i)return true;
+					var name = getName(parent.left).split('.');
+					if(thisList.includes(name[0]))ScopeTree.pushScope(name.join('.'));
+					else{
+						if(name[0] == 'window')ScopeTree.setCurrentScope(ScopeTree.findVarScope(name[0]));
+						else ScopeTree.setCurrentScope(ScopeTree.findVarScope(name[0]).val[name[0]]);
+						for(var i = 1; i < name.length; i++){
+							if(!ScopeTree.getCurrentScope().hasOwnProperty(name[i]))ScopeTree.pushVar('object', name[i]);
+							ScopeTree.pushScope(name[i]);
+						}
 					}
 				}
 				else{
-					for(var i = varScope[0].length - 1; i >= 0; i--){
-						if(id == varScope[0][i][0])return true;
+					ScopeTree.pushScope(ScopeTree.pushVar('object', 'anonymous'));
+					anonymous++;
+				}
+				for(var prop_index = 0; prop_index < node.properties.length; prop_index++){
+					switch (node.properties[prop_index].value.type){
+						case Syntax.ObjectExpression:
+							ScopeTree.pushVar('object', getName(node.properties[prop_index].key));
+							break;
+						case Syntax.FunctionExpression:
+							ScopeTree.pushVar('function', getName(node.properties[prop_index].key));
+							break;
+						default:
+							ScopeTree.pushVar('variable', getName(node.properties[prop_index].key));
 					}
-					for(var i in varScope[1]){
-						if(id == i)return true;
-					}
-				}
-				return true;
-			}
-		}
-	})();
-
-
-	var anonymous = 0;
-	/* indirect eval list */
-	var indirectEval = [];
-	
-	/* First traverse to find closure variables */
-	(function traverse(ast){
-	estraverse.traverse(ast, {
-		enter: function (node, parent) {
-			if (isNewScope(node)) {
-				if(parent.type == Syntax.VariableDeclarator) varScope.pushScope(parent.id.name);
-				else if(parent.type == Syntax.AssignmentExpression){
-					varScope.pushScope(getName(parent.left));
-				}
-				//else if(parent.type == Syntax.ReturnStatement || parent.type == Syntax.CallExpression){
-				else if(node.id == null){
-					varScope.pushScope();
-				}
-				else {
-					varScope.pushScope(node.id.name);
-				}
-				for(var i = 0; i < node.params.length; i++){
-					varScope.pushVar(getName(node.params[i]));
 				}
 			}
-
-			if (node.type == Syntax.VariableDeclarator) {
-				varScope.pushVar(node.id.name);
-			}
-			if (node.type == Syntax.AssignmentExpression) {
-				varScope.pushVar(getName(node.left), 'assign');
-				if(node.right.name == 'eval' || indirectEval.indexOf(node.right.name) > -1){
-					if(indirectEval.indexOf(node.left.name))indirectEval.push(node.left.name);
-				}
-			}
-
-			if (node.type == Syntax.Identifier && parent.type != Syntax.VariableDeclarator) {
-				varScope.setClosure(node.name);
-			}
-
-			if (node.type == Syntax.Identifier && parent.type == Syntax.VariableDeclarator) {
-				if(node.name == 'eval' || indirectEval.indexOf(node.name) > -1){
-					if(indirectEval.indexOf(parent.id.name) < 0)indirectEval.push(parent.id.name);
-				}
-			}
-
-			if (node.type == Syntax.Identifier && parent.type == Syntax.CallExpression && node.name == 'eval') {
-				if(parent.arguments[0].type == Syntax.Literal){
-					var evalCode = parent.arguments[0].value;
-					var evalAst = esprima.parse(evalCode);
-					traverse(evalAst);
-				}
-				/*
-				else if(parent.arguments[0].type == Syntax.Identifier){
-					evalString.push({id:parent.arguments[0].name, value:null});
-				}
-				*/
+			if(node.type == Syntax.ReturnStatement){
+				if(node.argument && node.argument.name)ScopeTree.setReturnFunction(node.argument.name);
 			}
 		},
-		leave: function (node, parent) {
-			if (isNewScope(node)) {
-				varScope.popScope();
+		leave: function(node, parent){
+			//console.log('leave===');
+			//console.log(node);
+			//print(ScopeTree.getCurrentScope());
+			//console.log('========');
+			//console.log();
+			if(node.type == Syntax.ReturnStatement){
+				if(node.argument && node.argument.type == Syntax.FunctionExpression)ScopeTree.setReturnFunction(poppedScope);
 			}
-			if (node.type == Syntax.ForStatement && node.init && node.init.type == Syntax.VariableDeclaration){
-				for(var i = 0; i < node.init.declarations.length; i++){
-					varScope.setClosure(node.init.declarations[i].id.name, true);
+			if(node.type == Syntax.FunctionDeclaration){
+				poppedScope = ScopeTree.popScope();
+				ScopeTree.setCurrentScope(scopeList.pop());
+			}
+			else if(node.type == Syntax.FunctionExpression && parent.type != Syntax.LogicalExpression){
+				if(parent.id)poppedScope = ScopeTree.popScope();
+				else if(parent.left){
+					var name = (getName(parent.left)).split('.');
+					if(name[0] == "this")poppedScope = ScopeTree.popScope();
+					else{ 
+						for(var _name = (name[0] == 'window' ? 1 : 0); _name < name.length; _name++){
+							poppedScope = ScopeTree.popScope();
+						}
+					}
+					//ScopeTree.pushScope(getName(parent.left));
 				}
+				else if(parent.key)poppedScope = ScopeTree.popScope();
+				else{
+					poppedScope = ScopeTree.popScope();
+				}
+				ScopeTree.setCurrentScope(scopeList.pop());
+			}
+			//if(node.type == Syntax.FunctionDeclaration || node.type == Syntax.FunctionExpression){
+			//	poppedScope = ScopeTree.popScope();
+			//}
+			else if(node.type == Syntax.ObjectExpression && parent.type != Syntax.LogicalExpression){
+				if(parent.id)poppedScope = ScopeTree.popScope();
+				else if(parent.left){
+					var name = getName(parent.left).split('.');
+					if(name[0] == "this")poppedScope = ScopeTree.popScope();
+					else{
+						for(var i = (name[0] == 'window' ? 1 : 0); i < name.length; i++){
+							poppedScope = ScopeTree.popScope();
+						}
+					}
+				}
+				else{
+					poppedScope = ScopeTree.popScope();
+				}
+				ScopeTree.setCurrentScope(scopeList.pop());
 			}
 		}
 	});
-	})(ast);
+	anonymous = 0;
 
-	var scope_num = 0;
-	//var scopeChain = [];
-	var scopeChain = Singleton.getScopeChain();
-
-	// To handle catch clause
-	var catchArg;
-	var isCatchBlock = false;
-
-	(function replacement(ast){
-	estraverse.replace(ast, {
-		enter: function (node, parent) {
-
-			if (node.type == Syntax.FunctionExpression) {
-				
-				/* varScope push scope */
-				if(parent.type == Syntax.VariableDeclarator){
-					var name = getName(parent.id);
-					if(name.startsWith("$fsm"))name = name.slice(6);
-					name = name.replace('fsm_', '');
-					varScope.pushScope(name);
+	estraverse.traverse(ast, {
+		enter: function(node, parent){
+			if(node.type == Syntax.CallExpression && builtInList.includes(getName(node.callee).split('.')[0]))this.skip();
+			if(node.type == Syntax.AssignmentExpression){
+				if(builtInList.includes(getName(node.left).split('.')[0])){
+					this.skip();
 				}
-				else if(parent.type == Syntax.AssignmentExpression){
-					var name = getName(parent.left);
-					if(name.startsWith("$fsm"))name = name.slice(6);
-					name = name.replace('fsm_', '');
-					varScope.pushScope(name);
+			}
+			if(node.type == Syntax.FunctionDeclaration){
+				scopeList.push(ScopeTree.getCurrentScope());
+				ScopeTree.pushScope(node.id.name);
+			}
+			else if(node.type == Syntax.FunctionExpression && parent.type != Syntax.LogicalExpression){
+				scopeList.push(ScopeTree.getCurrentScope());
+				if(parent.id)ScopeTree.pushScope(getName(parent.id));
+				else if(parent.left){
+					var thisList = []
+					for(var temp = ScopeTree.getCurrentScope(); temp; temp = temp.parent){
+						thisList = thisList.concat(temp.thisList);
+					}
+					var name = (getName(parent.left)).split('.');
+					if(thisList.includes(name[0]))ScopeTree.pushScope(name.join('.'));
+					else{ 
+						if(name[0] == 'window')ScopeTree.setCurrentScope(ScopeTree.findVarScope(name[0]));
+						else ScopeTree.setCurrentScope(ScopeTree.findVarScope(name[0]).val[name[0]]);
+						for(var _name = 1; _name < name.length; _name++){
+							ScopeTree.pushScope(name[_name]);
+						}
+					}
+					//ScopeTree.pushScope(getName(parent.left));
 				}
-				else if(node.id == null){
-					varScope.pushScope(anonymous++);
+				else if(parent.key)ScopeTree.pushScope(getName(parent.key));
+				else{
+					ScopeTree.pushScope(anonymous++);
+				}
+				//if(parent.id)ScopeTree.pushScope(getName(parent.id));
+				//else if(parent.key)ScopeTree.pushScope(getName(parent.key));
+				//else{
+				//	ScopeTree.pushScope(anonymous++);
+				//}
+			}
+			else if(node.type == Syntax.ObjectExpression && parent.type != Syntax.LogicalExpression){
+				scopeList.push(ScopeTree.getCurrentScope());
+				if(parent.id)ScopeTree.pushScope(getName(parent.id));
+				else if(parent.left){
+					var thisList = []
+					for(var temp = ScopeTree.getCurrentScope(); temp; temp = temp.parent){
+						thisList = thisList.concat(temp.thisList);
+					}
+					var name = getName(parent.left).split('.');
+					if(thisList.includes(name[0]))ScopeTree.pushScope(name.join('.'));
+					else{
+						if(name[0] == 'window')ScopeTree.setCurrentScope(ScopeTree.findVarScope(name[0]));
+						else ScopeTree.setCurrentScope(ScopeTree.findVarScope(name[0]).val[name[0]]);
+						for(var i = 1; i < name.length; i++){
+							ScopeTree.pushScope(name[i]);
+						}
+					}
 				}
 				else{
-					var name = getName(node.id);
-					if(name.startsWith("$fsm"))name = name.slice(6);
-					name = name.replace('fsm_', '');
-					varScope.pushScope(name);
+					ScopeTree.pushScope(anonymous++);
 				}
-				
-
-			//node.type == Syntax.Program ||
-				// Instrument a creation code
-				scope_num++;
-
-				// Make new scope to the scope chain
-				var scope = new Array();
-				if (node.params) {
-					scope.args = new Array();
-					for (var i = 0; i < node.params.length; i++) {
-						scope.args.push(node.params[i].name);
+			}
+			if(node.type == Syntax.CallExpression){
+				var evtList = ["setTimeout", "addEventListener", "attachEvent", "onclick", "onchange", "onmouseover", "onmouseout", "onkeydown", "onload", "setInterval"];
+				if(node.callee.type == Syntax.Identifier && evtList.indexOf(node.callee.name) > -1){
+					var args = node.arguments;
+					for(var arg = 0; arg < args.length; arg++){
+						if(args[arg].type == Syntax.Identifier){
+							ScopeTree.setEventHandler(args[arg].name);
+						}
 					}
 				}
-				scopeChain.push(scope);
-				scopeObjs.pushScope(parent, scope_num);
+				else if(node.callee.type == Syntax.MemberExpression && evtList.indexOf(node.callee.property.name) > -1){
+					var args = node.arguments;
+					for(var arg = 0; arg < args.length; arg++){
+						if(args[arg].type == Syntax.Identifier){
+							ScopeTree.setEventHandler(args[arg].name);
+						}
+					}
+				}
 			}
-
-			// FunctionDeclaration -> FunctionExpression
-			if (node.type == Syntax.FunctionDeclaration) {
-				var currentScope = scopeChain[scope_num];
-				currentScope.push(node.id.name);
-				node.type = Syntax.FunctionExpression;
-				return new ExpressionStatement(
-						new AssignmentExpression(
-							'=',
-							node.id,
-							node
-							));
+			if(node.type == Syntax.Identifier && parent.type != Syntax.FunctionDeclaration){
+				ScopeTree.accessVar(node.name, true);
 			}
+		},
+		leave: function(node, parent){
+			if(node.type == Syntax.FunctionDeclaration){
+				poppedScope = ScopeTree.popScope();
+				ScopeTree.setCurrentScope(scopeList.pop());
+			}
+			else if(node.type == Syntax.FunctionExpression && parent.type != Syntax.LogicalExpression){
+				if(parent.id)poppedScope = ScopeTree.popScope();
+				else if(parent.left){
+					var name = (getName(parent.left)).split('.');
+					if(name[0] == "this")poppedScope = ScopeTree.popScope();
+					else{ 
+						for(var _name = (name[0] == 'window' ? 1 : 0); _name < name.length; _name++){
+							poppedScope = ScopeTree.popScope();
+						}
+					}
+					//ScopeTree.pushScope(getName(parent.left));
+				}
+				else if(parent.key)poppedScope = ScopeTree.popScope();
+				else{
+					poppedScope = ScopeTree.popScope();
+				}
+				ScopeTree.setCurrentScope(scopeList.pop());
+			}
+			//if(node.type == Syntax.FunctionDeclaration || node.type == Syntax.FunctionExpression){
+			//	poppedScope = ScopeTree.popScope();
+			//}
+			else if(node.type == Syntax.ObjectExpression && parent.type != Syntax.LogicalExpression){
+				if(parent.id)poppedScope = ScopeTree.popScope();
+				else if(parent.left){
+					var name = getName(parent.left).split('.');
+					if(name[0] == "this")poppedScope = ScopeTree.popScope();
+					else{
+						for(var i = (name[0] == 'window' ? 1 : 0); i < name.length; i++){
+							poppedScope = ScopeTree.popScope();
+						}
+					}
+				}
+				else{
+					poppedScope = ScopeTree.popScope();
+				}
+				ScopeTree.setCurrentScope(scopeList.pop());
+			}
+		}
+	});
 
-			// If the present node is VariableDeclaration
-			// var a, b, c
-			if (node.type == Syntax.VariableDeclaration) {
-				var exps = new Array();
-				var currentScope = scopeChain[scopeChain.length - 1];
-				var scopeId = scopeChain.length - 1;
-				for (var i = 0; i < node.declarations.length; i++) {
-					/* Do nothing if parent type is forstatement */
-					if(parent.type == Syntax.ForStatement)return node;
-
-					currentScope.push(node.declarations[i].id.name);
-					debug.log('[VariableDeclarator] ' + node.declarations[i].id.name);
-					debug.log(node.declarations[i]);
-					debug.log('[scopeChain]');
-					debug.log(scopeChain);
-					var replaced = undefined;
-
-					/* If the variable is not a closure variable or global variable, VariableDeclaralation remains */
-					if (!varScope.isClosure(node.declarations[i].id.name) || varScope.isGlobal(node.declarations[i].id.name)){
-						replaced = new VariableDeclaration(
-									[new VariableDeclarator(
-										node.declarations[i].id, node.declarations[i].init)],
-									node.kind
+	function createFSM(){
+		var currentDepth = ScopeTree.getCurrentScope().depth;
+		return new VariableDeclaration(
+				[new VariableDeclarator(
+					new Identifier(
+						"$fsm" + currentDepth
+						),
+					new CallExpression(
+						new MemberExpression(
+							false,
+							new Identifier(
+								"$fsm"
+								),
+							new Identifier(
+								"create"
+								)
+							),
+						[
+						new Identifier(
+							"arguments"
+							)
+						]
+						)
+					)],
+					'var'
 						);
-						exps.push(replaced);
-						continue;
-					}
-					if (node.declarations[i].init) {
-						debug.log('[VariableDeclarator] varDecl has node.init');
-						//var right = node.declarations[i].init;
-						replaced = new AssignmentExpression(
-									'=',
-									/*
-									new MemberExpression(false,
-										new Identifier('$fsm' + scopeId),
-										new Identifier(node.declarations[i].id.name)
-										),
-									*/
-									new Identifier(node.declarations[i].id.name),
-									node.declarations[i].init
-						);
-					} else {
-						replaced = new AssignmentExpression(
-									'=',
-									/*
-									new MemberExpression(false,
-										new Identifier('$fsm' + scopeId),
-										new Identifier(node.declarations[i].id.name)
-										),
-									*/
-									new Identifier(node.declarations[i].id.name),
-									new Identifier('undefined')
-									);
-					}
-					if (parent.type != Syntax.ForStatement) {
-						replaced = new ExpressionStatement(replaced);
-					}
-					exps.push(replaced);
-				}
-				if (exps.length == 1)
-					return exps[0];
-				return new BlockStatement(exps);
-				//parent.body.splice(parent.body.indexOf(node), 1, ...exps);
-				//return replaced;
-			}
+	}
+	anonymous = 0;
 
-			// type: AssignmentExpression
-			if (node.type == Syntax.AssignmentExpression) {
-				// Put a global variable which was written to the reference table
-				if (node.left && node.left.type == Syntax.Identifier && node.left.name in g) {
-					referencedGlobals.pushIdentical(node.left.name);
-				}
-			}
+	var fsm_access_indices = [];
 
-			// Event Handler
-			if (node.type == Syntax.Identifier) {
-				if (['addEventListener', 'onclick', 'onchange', 'onmouseover', 'onmouseout', 'onkeydown', 'onload', 'setTimeout'].includes(node.name)){
-					node.name = 'fsm_' + node.name;
-				}
-			}
-
-			// For CatchClause
-			if (node.type == Syntax.CatchClause)isCatchBlock = true;
-
-			if (STATELESS) {
-				// Flags
-				if (node.type == Syntax.ForStatement) {
-					statementScope.ForStatement.push({
-						scope: (scopeChain.length - 1),
-						vars: []
+	estraverse.replace(ast, {
+		enter: function (node, parent) {
+			if(node.type == Syntax.CallExpression && builtInList.includes(getName(node.callee).split('.')[0])){
+				for(var i = 0; i < node.arguments.length; i++){
+					estraverse.replace(node, {
+						enter: function(node, parent){
+						},
+						leave: function(node, parent){
+							if(node.type == Syntax.Identifier){
+								var scope_of_id = ScopeTree.accessVar(node.name);
+								if(parent.type == Syntax.MemberExpression && parent.object == node){
+									if(scope_of_id && scope_of_id.isClosure && !(parent.type == Syntax.MemberExpression && parent.object.type == Syntax.ThisExpression) && parent.type != Syntax.FunctionDeclaration && parent.type != Syntax.FunctionExpression){
+										if(parent.type != Syntax.FunctionDeclaration){
+											if(!(fsm_access_indices.includes(scope_of_id.depth)))fsm_access_indices.push(scope_of_id.depth);
+											return new MemberExpression(
+													false,
+													new Identifier(
+														"$fsm" + scope_of_id.depth
+														),
+													node
+													);
+										}
+									}
+								}
+								else if(parent.type != Syntax.MemberExpression || (parent.type == Syntax.MemberExpression && parent.property == node && parent.computed == true)){
+									if(scope_of_id && scope_of_id.isClosure && !(parent.type == Syntax.MemberExpression && parent.object.type == Syntax.ThisExpression) && parent.type != Syntax.FunctionDeclaration && parent.type != Syntax.FunctionExpression){
+										if(parent.type != Syntax.FunctionDeclaration){
+											if(!(fsm_access_indices.includes(scope_of_id.depth)))fsm_access_indices.push(scope_of_id.depth);
+											return new MemberExpression(
+													false,
+													new Identifier(
+														"$fsm" + scope_of_id.depth
+														),
+													node
+													);
+										}
+									}
+								}
+							}
+						}
 					});
 				}
+				this.skip();
 			}
-		}, leave: function(node, parent) {
-
-			// for CatchClause
-			if (node.type == Syntax.CatchClause)isCatchBlock = false;
-			
-			// Pop the current scope
-			if (isNewScope(node)) {
-				
-				// Insert $# = runtime.create(arguments);
-				/*
-				var signature = '';
-				for (var i = 1; i < scope_num; i++) {
-					signature += '$fsm' + i + ' = runtime.get(JSON.stringify($' + i + '.key));';
+			if(node.type == Syntax.AssignmentExpression){
+				if(builtInList.includes(getName(node.left).split('.')[0])){
+					this.skip();
 				}
-				*/
-
-				/* Create "$fsm.create" code only if the scope has closure variables */
-				if(varScope.isClosureScope()){
-					signature = 'var $fsm' + scope_num+ ' = $fsm.create(arguments)'; // OPT ME: convert to an AST node
-					signature = esprima.parse(signature).body[0];
-
-					// Interleave the signature
-					var shifting_body = node.body;
-					// Find real code body
-					while(shifting_body.type) {
-						shifting_body = shifting_body.body;
-					}
-					shifting_body.unshift(signature); // Interleave at the first line
-					//printScope(currentScope, node);
-				}
-
-
-				// scope chain
-				//var currentScope = scopeChain.pop();
-				
-				varScope.popScope();
-				scopeChain.pop();
-
-				//scopeObjs.popScope();
-				scope_num--;
 			}
-
-			// type: Identifier
-			if (node.type == Syntax.Identifier) {
-
-				/* Do nothing if identifier's name id 'arguments' */
-				if(node.name == "arguments")return;
-
-				/* Instrument string literal argument of eval function */
-				if(node.name == "eval" && parent.type == Syntax.CallExpression){
-					if(parent.arguments[0].type == Syntax.Literal){
-						var evalCode = parent.arguments[0].value;
-						var evalAst = esprima.parse(evalCode);
-						replacement(evalAst);
-						var newCode = escodegen.generate(evalAst);
-						parent.arguments[0].value = newCode;
+			if(node.type == Syntax.FunctionDeclaration){
+				scopeList.push(ScopeTree.getCurrentScope());
+				ScopeTree.pushScope(node.id.name);
+			}
+			else if(node.type == Syntax.FunctionExpression && parent.type != Syntax.LogicalExpression){
+				scopeList.push(ScopeTree.getCurrentScope());
+				if(parent.id){
+					if(parent.id.type == Syntax.MemberExpression)ScopeTree.pushScope(getName(parent.id.property))
+					else ScopeTree.pushScope(getName(parent.id));
+				}
+				else if(parent.left){
+					var thisList = []
+					for(var temp = ScopeTree.getCurrentScope(); temp; temp = temp.parent){
+						thisList = thisList.concat(temp.thisList);
 					}
-				}
-				if(indirectEval.indexOf(node.name) > -1 && parent.type == Syntax.CallExpression){
-					if(parent.arguments[0].type == Syntax.Literal){
-						var evalCode = parent.arguments[0].value;
-						var tempScopeObjs = scopeObjs;
-						var tempSingleton = Singleton;
-						scopeObjs = createScopeObjs();
-						Singleton = createSingleton();
-						var newCode = traceInstrument(evalCode);
-						Singleton = tempSingleton;
-						scopeObjs = tempScopeObjs;
-						parent.arguments[0].value = newCode;
+					var name = (getName(parent.left)).split('.');
+					if(name[0].startsWith("$fsm"))name = name.slice(1);
+					if(thisList.includes(name[0]))ScopeTree.pushScope(name.join('.'));
+					else{ 
+						if(name[0] == 'window')ScopeTree.setCurrentScope(ScopeTree.findVarScope(name[0]));
+						else ScopeTree.setCurrentScope(ScopeTree.findVarScope(name[0]).val[name[0]]);
+						for(var _name = 1; _name < name.length; _name++){
+							ScopeTree.pushScope(name[_name]);
+						}
 					}
+					//ScopeTree.pushScope(getName(parent.left));
+				}
+				else if(parent.key){
+					if(parent.key.type == Syntax.MemberExpression)ScopeTree.pushScope(getName(parent.key.property));
+					else ScopeTree.pushScope(getName(parent.key));
+				}
+				else{
+					ScopeTree.pushScope(anonymous++);
 				}
 
-				debug.log('[Identifier] ' + node.name);
-				debug.log('[Identifier] parent:');
-				debug.log(parent);
-
-				/* Handle cacth block */
-				if (parent.type == Syntax.CatchClause){
-					catchArg = node.name;
-					return;
+				//if(parent.id){
+				//	if(parent.id.type == Syntax.MemberExpression)ScopeTree.pushScope(getName(parent.id.property))
+				//	else ScopeTree.pushScope(getName(parent.id));
+				//}
+				//else if(parent.key){
+				//	if(parent.key.type == Syntax.MemberExpression)ScopeTree.pushScope(getName(parent.key.property));
+				//	else ScopeTree.pushScope(getName(parent.key));
+				//}
+				//else{
+				//	ScopeTree.pushScope(anonymous++);
+				//}
+			}
+			else if(node.type == Syntax.ObjectExpression && parent.type != Syntax.LogicalExpression){
+				scopeList.push(ScopeTree.getCurrentScope());
+				if(parent.id){
+					if(parent.id.type == Syntax.MemberExpression)ScopeTree.pushScope(getName(parent.id.property));
+					else ScopeTree.pushScope(getName(parent.id));
 				}
-				if (isCatchBlock && node.name == catchArg)return;
-
-				if (parent.type == Syntax.LabeledStatement || parent.type == Syntax.BreakStatement || parent.type == Syntax.ContinueStatement)return;
-				if (node.name in g && referencedGlobals.indexOf(node.name) == -1) {
-					return;
-				}
-				//if (node.name in g) return;
-				if (parent.type == Syntax.FunctionDeclaration ||
-					parent.type == Syntax.FunctionExpression) return;
-				if (STATELESS) {
-					// ForStatement
-					if (statementScope.ForStatement.getCurrent() == (scopeChain.length - 1)) {
-						if (parent.type == Syntax.VariableDeclarator && parent.id == node) {
-							debug.log('[Identifier] ForStatement Id');
-							return;
-						}
-						if (parent.type == Syntax.BinaryExpression && parent.left == node) {
-							debug.log('[Identifier] ForStatement Binary left');
-							return;
-						}
-						if (parent.type == Syntax.UpdateExpression && parent.argument == node) {
-							debug.log('[Identifier] ForStatement Update argument');
-							return;
+				else if(parent.left){
+					var thisList = []
+					for(var temp = ScopeTree.getCurrentScope(); temp; temp = temp.parent){
+						thisList = thisList.concat(temp.thisList);
+					}
+					var name = getName(parent.left).split('.');
+					if(name[0].startsWith("$fsm"))name = name.slice(1);
+					if(thisList.includes(name[0]))ScopeTree.pushScope(name.join('.'));
+					else{
+						if(name[0] == 'window')ScopeTree.setCurrentScope(ScopeTree.findVarScope(name[0]));
+						else ScopeTree.setCurrentScope(ScopeTree.findVarScope(name[0]).val[name[0]]);
+						for(var i = 1; i < name.length; i++){
+							ScopeTree.pushScope(name[i]);
 						}
 					}
 				}
-				// 
-				if (parent.type == Syntax.Property && parent.key == node) return;
-
-				//if (!varScope.isClosure(node.name) && !varScope.isGlobal(node.name))return;
-				if (!varScope.isClosure(node.name) || varScope.isGlobal(node.name))return;
-				if (parent.type != Syntax.MemberExpression || parent.object == node) {
-					// a.b.c -> $n.a.b.c
-					debug.log('[Identifier] !MemberExpression || parent.object = node');
-					var replaced = scopeChain.getScopeStatement(node.name);
-					return replaced;
-				}
-				if (parent.type == Syntax.MemberExpression && parent.computed == true && parent.property == node) {
-					// 
-					debug.log('[Identifier] MemberExpression && parent.computed = true && parent.property = node');
-					var replaced = scopeChain.getScopeStatement(node.name);
-					return replaced;
+				else{
+					ScopeTree.pushScope(anonymous++);
 				}
 			}
-
-			// type: AssignmentExpression
-			if (node.type == Syntax.ExpressionStatement && node.expression.type == Syntax.AssignmentExpression && isNewScope(node.expression.right)) {
-
-				/* If the function is global, change FunctionExpression to FunctionDeclaration */
-				if (node.expression.left.name && varScope.isGlobal(node.expression.left.name)){
-					return new FunctionDeclaration(
-							node.expression.left,
-							node.expression.right.params,
-							node.expression.right.body,
-							node.expression.right.generator,
-							node.expression.right.expression,
-							node.expression.right.async
+			//if(node.type == Syntax.FunctionDeclaration){
+			//	ScopeTree.pushScope(node.id.name);
+			//}
+			//else if(node.type == Syntax.FunctionExpression || (node.type == Syntax.ObjectExpression && parent.type != Syntax.CallExpression)){
+			//	if(parent.id){
+			//		if(parent.id.name)ScopeTree.pushScope(parent.id.name);
+			//		else ScopeTree.pushScope(parent.id.property.name);
+			//	}
+			//	else if(parent.key){
+			//		if(parent.key.name)ScopeTree.pushScope(parent.key.name);
+			//		else ScopeTree.pushScope(parent.key.property.name);
+			//	}
+			//	else ScopeTree.pushScope(anonymous++);
+			//}
+		},
+		leave: function(node, parent) {
+			if(node.type == Syntax.FunctionDeclaration || node.type == Syntax.FunctionExpression || (node.type == Syntax.ObjectExpression)){
+				if(node.type != Syntax.ObjectExpression && ScopeTree.getCurrentScope().isClosure){
+					for(var param = node.params.length - 1; param > -1; param--){
+						node.body.body.unshift(
+								new ExpressionStatement(
+									new AssignmentExpression(
+										"=",
+										new MemberExpression(
+											false,
+											new Identifier("$fsm" + ScopeTree.getCurrentScope().depth),
+											node.params[param]
+											),
+										node.params[param]
+										)
+									)
+								);
+					}
+					for(var index = 0; index < fsm_access_indices.length; index++){
+						node.body.body.unshift(
+								new ExpressionStatement(
+									new AssignmentExpression(
+										"=",
+										new MemberExpression(
+											false,
+											new MemberExpression(
+												false,
+												new Identifier("$fsm" + ScopeTree.getCurrentScope().depth),
+												new Identifier("$scopes")
+											),
+											new Identifier("$fsm" + fsm_access_indices[index])
+										),
+										new MemberExpression(
+											false,
+											new Identifier("$fsm" + fsm_access_indices[index]),
+											new Identifier("$ref_index")
+										)
+									)
+								)
+							);
+					}
+					node.body.body.unshift(
+							new ExpressionStatement(
+								new AssignmentExpression(
+									"=",
+									new MemberExpression(
+										false,
+										new ThisExpression(),
+										new Identifier("$fsm_index")
+									),
+									new ArrayExpression(
+										[
+										new Literal(ScopeTree.getCurrentScope().depth),
+										new MemberExpression(
+											false,
+											new Identifier("$fsm" + ScopeTree.getCurrentScope().depth),
+											new Identifier("$ref_index")
+											)
+										]
+										)
+									)
+								)
+							);
+					node.body.body.unshift(createFSM());
+					fsm_access_indices = [];
+				}
+				//poppedScope = ScopeTree.popScope();
+				//if(node.type == Syntax.FunctionDeclaration || node.type == Syntax.FunctionExpression){
+				//	poppedScope = ScopeTree.popScope();
+				//}
+				if(node.type == Syntax.FunctionDeclaration){
+					poppedScope = ScopeTree.popScope();
+					ScopeTree.setCurrentScope(scopeList.pop());
+				}
+				else if(node.type == Syntax.FunctionExpression && parent.type != Syntax.LogicalExpression){
+					if(parent.id)poppedScope = ScopeTree.popScope();
+					else if(parent.left){
+						var name = (getName(parent.left)).split('.');
+						if(name[0] == "this")poppedScope = ScopeTree.popScope();
+						else{ 
+							for(var _name = (name[0] == 'window' ? 1 : 0); _name < name.length; _name++){
+								poppedScope = ScopeTree.popScope();
+							}
+						}
+						//ScopeTree.pushScope(getName(parent.left));
+					}
+					else if(parent.key)poppedScope = ScopeTree.popScope();
+					else{
+						poppedScope = ScopeTree.popScope();
+					}
+					ScopeTree.setCurrentScope(scopeList.pop());
+				}
+				else if(node.type == Syntax.ObjectExpression && parent.type != Syntax.LogicalExpression){
+					if(parent.id)poppedScope = ScopeTree.popScope();
+					else if(parent.left){
+						var name = getName(parent.left).split('.');
+						if(name[0] == "this")poppedScope = ScopeTree.popScope();
+						else{
+							for(var i = (name[0] == 'window' ? 1 : 0); i < name.length; i++){
+								poppedScope = ScopeTree.popScope();
+							}
+						}
+					}
+					else{
+						poppedScope = ScopeTree.popScope();
+					}
+					ScopeTree.setCurrentScope(scopeList.pop());
+				}
+			}
+			if(node.type == Syntax.FunctionDeclaration){
+				var scope_of_func = ScopeTree.accessVar(node.id.name);
+				if(scope_of_func && scope_of_func.isClosure){
+					if(!(fsm_access_indices.includes(scope_of_func.depth)))fsm_access_indices.push(scope_of_func.depth);
+					return new ExpressionStatement(
+							new AssignmentExpression(
+								"=",
+								new MemberExpression(
+									false,
+									new Identifier(
+										"$fsm" + scope_of_func.depth
+										),
+									new Identifier(
+										node.id.name
+										)
+									),
+								new FunctionExpression(
+									node.id,
+									node.params,
+									node.body,
+									node.generator,
+									node.expression,
+									node.async
+									)
+								)
 							);
 				}
-
-				if (node.expression.right.type == Syntax.FunctionExpression && scope_num > 0) {
-					if(!node.expression.left.object || !node.expression.left.object.type == Syntax.ThisExpression){
-						return new VariableDeclaration(
-								[new VariableDeclarator(
-									node.expression.left, node.expression.right)],
-								"var"
+			}
+			if(node.type == Syntax.VariableDeclaration){
+				if(ScopeTree.getCurrentScope().isClosure){
+					var decl_list = [];
+					for(var decl = 0; decl < node.declarations.length; decl++){
+						if(parent.type == Syntax.ForInStatement){
+							decl_list.push(
+									node.declarations[decl].id
+									);
+							continue;
+						}
+						decl_list.push(
+								new AssignmentExpression(
+									"=",
+									node.declarations[decl].id,
+									(node.declarations[decl].init ? node.declarations[decl].init : new Identifier("undefined"))
+									)
+								);
+					}
+					if(parent.type == Syntax.ForStatement || parent.type == Syntax.ForInStatement)return new SequenceExpression(decl_list);
+					return new ExpressionStatement(
+							new SequenceExpression(decl_list)
+							);
+				}
+			}
+			if(node.type == Syntax.Identifier && (parent.type != Syntax.Property || (parent.type == Syntax.Property && parent.key != node))){
+				//var evtList = ["setTimeout", "addEventListener", "attachEvent", "onclick", "onchange", "onmouseover", "onmouseout", "onkeydown", "onload", "setInterval"];
+				//if(evtList.includes(node.name))node.name = "fsm_" + node.name;
+				var scope_of_id = ScopeTree.accessVar(node.name);
+				var thisList = [];
+				var thisDepth = [];
+				var isClosureList = [];
+				for(var temp = ScopeTree.getCurrentScope(); temp; temp = temp.parent){
+					thisList = thisList.concat(temp.thisList);
+					var temp_depth = new Array(temp.thisList.length);
+					temp_depth.fill(temp.depth);
+					thisDepth = thisDepth.concat(temp_depth);
+					var temp_closure = new Array(temp.thisList.length);
+					temp_closure.fill(temp.isClosure);
+					isClosureList = isClosureList.concat(temp_closure);
+				}
+				var thisIndex = thisList.indexOf(node.name);
+				if(thisIndex > -1 && isClosureList[thisIndex]){
+					return new MemberExpression(
+							false,
+							new Identifier(
+								"$fsm" + thisDepth[thisIndex]
+								),
+							node);
+				}
+				if(parent.type == Syntax.MemberExpression && parent.object == node){
+					if(scope_of_id && scope_of_id.isClosure && !(parent.type == Syntax.MemberExpression && parent.object.type == Syntax.ThisExpression) && parent.type != Syntax.FunctionDeclaration && parent.type != Syntax.FunctionExpression){
+						if(parent.type != Syntax.FunctionDeclaration){
+							if(!(fsm_access_indices.includes(scope_of_id.depth)))fsm_access_indices.push(scope_of_id.depth);
+							return new MemberExpression(
+									false,
+									new Identifier(
+										"$fsm" + scope_of_id.depth
+										),
+									node
+									);
+						}
+					}
+				}
+				//}
+				//else if(parent.type == Syntax.CallExpression){
+				else if(parent.type != Syntax.MemberExpression || (parent.type == Syntax.MemberExpression && parent.property == node && parent.computed == true)){
+					if(scope_of_id && scope_of_id.isClosure && !(parent.type == Syntax.MemberExpression && parent.object.type == Syntax.ThisExpression) && parent.type != Syntax.FunctionDeclaration && parent.type != Syntax.FunctionExpression){
+						if(parent.type != Syntax.FunctionDeclaration){
+							if(!(fsm_access_indices.includes(scope_of_id.depth)))fsm_access_indices.push(scope_of_id.depth);
+							return new MemberExpression(
+									false,
+									new Identifier(
+										"$fsm" + scope_of_id.depth
+										),
+									node
+									);
+						}
+					}
+				}
+				//else if(scope_of_id && scope_of_id.isClosure){
+				//	if(scope_of_id && scope_of_id.isClosure && !(parent.type == Syntax.MemberExpression && parent.object.type == Syntax.ThisExpression) && parent.type != Syntax.FunctionDeclaration && parent.type != Syntax.FunctionExpression){
+				//		if(!(fsm_access_indices.includes(scope_of_id.depth)))fsm_access_indices.push(scope_of_id.depth);
+				//		return new MemberExpression(
+				//				false,
+				//				new Identifier(
+				//					"$fsm" + scope_of_id.depth
+				//					),
+				//				node
+				//				);
+				//	}
+				//}
+			}
+			if(node.type == Syntax.CallExpression){
+				var evtList = ["setTimeout", "addEventListener", "attachEvent", "onclick", "onchange", "onmouseover", "onmouseout", "onkeydown", "onload", "setInterval"];
+				if(node.callee.type == Syntax.Identifier && evtList.includes(node.callee.name)){
+					node.callee.name = "fsm_" + node.callee.name;
+					var args = node.arguments;
+					var fsm_index = new Identifier("undefined");
+					for(var arg = 0; arg < args.length; arg++){
+						if(args[arg].type == Syntax.FunctionExpression){
+							var temp = args[arg];
+							var names = [];
+							estraverse.traverse(temp, {
+								enter: function(node, parent){
+									if(node.type == Syntax.Identifier){
+										var matched = node.name.match(/\$fsm[0-9]+/);
+										if(matched && !names.includes(matched[0])){
+											var num = matched[0].slice(4);
+											names.push(
+													new ArrayExpression(
+														[
+														new Literal(
+															parseInt(num)
+														),
+														new MemberExpression(
+															false,
+															new Identifier(matched[0]),
+															new Identifier("$ref_index")
+															)
+														]
+														)
+												);
+										}
+									}
+								},
+								leave: function(node, parent){
+								}
+							});
+							fsm_index = new ArrayExpression(names);
+						}
+						if(args[arg].type == Syntax.MemberExpression){
+							var temp = args[arg];
+							while(temp){
+								if(temp.type == Syntax.Identifier && temp.name.startsWith("$fsm")){
+									fsm_index = new MemberExpression(
+											false,
+											temp,
+											new Identifier("$ref_index")
+									);
+									break;
+								}
+								temp = temp.object;
+							}
+							if(fsm_index.type == Syntax.MemberExpression)break;
+						}
+					}
+					args.unshift(fsm_index);
+				}
+				else if(node.callee.type == Syntax.Identifier){
+					var scope_of_id = ScopeTree.accessVar(node.callee.name);
+					if(scope_of_id && scope_of_id.isClosure){
+						return new CallExpression(
+								new MemberExpression(
+									false,
+									new Identifier(
+										"$fsm" + scope_of_id.depth
+										),
+									node.callee
+									),
+								node.arguments
 								);
 					}
 				}
-
-				//console.log(parent);
-				var scopeObj = scopeObjs.popScope();
-				var currentScope = scopeObj.node.object;
-				if(!currentScope)return;
-				while(currentScope.hasOwnProperty("object")){
-					currentScope = currentScope.object;
+				else if(node.callee.type == Syntax.MemberExpression && evtList.includes(node.callee.property.name)){
+					node.callee.property.name = "fsm_" + node.callee.property.name;
+					var args = node.arguments;
+					var fsm_index = new Identifier("undefined");
+					for(var arg = 0; arg < args.length; arg++){
+						if(args[arg].type == Syntax.FunctionExpression){
+							var temp = args[arg];
+							var names = [];
+							var removeList = [];
+							estraverse.traverse(temp, {
+								enter: function(node, parent){
+									if(node.type == Syntax.Identifier){
+										var matched = node.name.match(/\$fsm[0-9]+/);
+										if(matched && !names.includes(matched[0])){
+											var num = matched[0].slice(4);
+											if(parent.type == Syntax.VariableDeclarator && parent.init && parent.init.type == Syntax.CallExpression && parent.init.callee.type == Syntax.MemberExpression && parent.init.callee.property.name == 'create'){
+												removeList.push(num);
+											}
+											else{
+												if(!removeList.includes(num)){
+													for(var index = 0; index < names.length; index++){
+														if(names[index].elements[0].value == num)break;
+													}
+													if(index >= names.length){
+														names.push(
+																new ArrayExpression(
+																	[
+																	new Literal(
+																		parseInt(num)
+																		),
+																	new MemberExpression(
+																		false,
+																		new Identifier(matched[0]),
+																		new Identifier("$ref_index")
+																		)
+																	]
+																	)
+																);
+													}
+												}
+											}
+										}
+									}
+								},
+								leave: function(node, parent){
+								}
+							});
+							fsm_index = new ArrayExpression(names);
+						}
+						if(args[arg].type == Syntax.MemberExpression){
+							var temp = args[arg];
+							while(temp){
+								if(temp.type == Syntax.Identifier && temp.name.startsWith("$fsm")){
+									fsm_index = new MemberExpression(
+											false,
+											temp,
+											new Identifier("$ref_index")
+									);
+									break;
+								}
+								temp = temp.object;
+							}
+							if(fsm_index.type == Syntax.MemberExpression)break;
+						}
+					}
+					args.unshift(fsm_index);
 				}
-				//var currentScope = scopeObj.node.object.name.substring(4);
-				if(currentScope.name)
-					currentScope = currentScope.name.substring(4);
-				if (currentScope != 0) {
-					/*
-				parent.body.push(new ExpressionStatement(new AssignmentExpression(
-					'=',
-					scopeObj.node,
-					new Identifier('test')
-				)));
-				*/
-					var exps = [node];
-
-					/* Comment due to some error
-					if (scopeObj.length > 0) {
-						exps.push(new ExpressionStatement(new AssignmentExpression(
-							'=',
-							new MemberExpression(false, scopeObj.node, new Identifier('$scopeObj')),
-							new Identifier('new Object()') // OPT ME: convert to an AST node
-						)));
-					}
-					for (var i = 0; i < scopeObj.length; i++) {
-						//if (currentScope == scopeObj[i]) continue;
-						exps.push(new ExpressionStatement(new AssignmentExpression(
-							'=',
-							new MemberExpression(false, scopeObj.node, new Identifier('$scopeObj.$fsm' + scopeObj[i])),
-							new Identifier('$fsm.getScopeObj($fsm' + scopeObj[i] + ')') // OPT ME: convert to an AST node
-						)));
-					}
-					*/
-					return new BlockStatement(
-						exps
-					);
-				}
-
-				if (STATELESS) {
-					// Flags
-					if (node.type == Syntax.ForStatement) {
-						statementScope.ForStatement.pop();
-					}
+			}
+			
+			if(node.type == Syntax.ReturnStatement && node.argument){
+				var arg = node.argument, name = getName(node.argument);
+				var _name = name.split('.')[0].match(/\$fsm[0-9]+/);
+				if(node.argument.type == Syntax.FunctionExpression)_name = ["$fsm" + ScopeTree.getCurrentScope().depth];
+				if(_name && _name[0] == ("$fsm" + ScopeTree.getCurrentScope().depth)){
+					ScopeTree.getCurrentScope().isClosure = true;
+					return new ReturnStatement(
+							new AssignmentExpression(
+								"=",
+								new MemberExpression(
+									false,
+									new Identifier(_name[0]),
+									new Identifier("$ret_func")
+									),
+								arg
+								)
+							);
 				}
 			}
 		}
 	});
-	})(ast);
-	debug.log('AST');
-	debug.log(ast);
-	//console.log(ast);
-
 	return escodegen.generate(ast);
 }
 
@@ -828,6 +1254,13 @@ function MemberExpression(computed, object, property) {
 	this.property = property;
 }
 
+function StaticMemberExpression(computed, object, property) {
+	this.type = Syntax.MemberExpression;
+	this.computed = computed;
+	this.object = object;
+	this.property = property;
+}
+
 function AssignmentExpression(operator, left, right) {
 	this.type = Syntax.AssignmentExpression;
 	this.operator = operator;
@@ -839,7 +1272,7 @@ function AssignmentExpression(operator, left, right) {
 function ExpressionStatement(expression) {
 	this.type = Syntax.ExpressionStatement;
 	this.expression = expression;
-			//directive?: string;
+	//directive?: string;
 }
 
 function BlockStatement(statementListItem) {
@@ -867,4 +1300,45 @@ function FunctionDeclaration(id, params, body, generator, expression, async){
 	this.generator = generator;
 	this.expression = expression;
 	this.async = async;
+}
+
+function FunctionExpression(id, params, body, generator, expression, async){
+	this.type = Syntax.FunctionExpression;
+	this.id = id;
+	this.params = params;
+	this.body = body;
+	this.generator = generator;
+	this.expression = expression;
+	this.async = async;
+}
+
+function ReturnStatement(argument){
+	this.type = Syntax.ReturnStatement;
+	this.argument = argument;
+}
+
+function CallExpression(callee, arguments){
+	this.type = Syntax.CallExpression;
+	this.callee = callee;
+	this.arguments = arguments;
+}
+
+function SequenceExpression(expressions){
+	this.type = Syntax.SequenceExpression;
+	this.expressions = expressions;
+}
+
+function ThisExpression(){
+	this.type = Syntax.ThisExpression;
+}
+
+function ArrayExpression(elements){
+	this.type = Syntax.ArrayExpression;
+	this.elements = elements;
+}
+
+function Literal(value){
+	this.type = Syntax.Literal;
+	this.value = value;
+	this.raw = value.toString();
 }
