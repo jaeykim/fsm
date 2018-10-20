@@ -31,10 +31,23 @@ document.addEventListener("keydown", function(e){
 	}
 }, false);
 
+// WeakMap functions
+function indexOfWeakMap(wm, obj) {
+    for (let key in Object.keys(wm)) {
+        console.log(`key: ${key}, value: ${wm[key]}`);
+        if (wm[key] == obj) return key;
+    }
+    return -1;
+}
+
+function lengthOfWeakMap(wm) {
+	return Object.keys(wm).length;
+}
+
 var $fsm = (function() {
 	var dom;
-	var fsm_map = new WeakMap();
-	var ref_table = new Array();
+	//var ref_table = new Array();
+	var ref_table = new WeakMap();
 	var event_table = new Array();
 	var event_attrib_table = new Array();
 	var initial_global = Array.prototype.slice.call(Object.keys(window));
@@ -70,7 +83,8 @@ var $fsm = (function() {
 			return ref_table[ref_index++];
 		},
 		getScopeObj : function(obj){
-			return ref_table.indexOf(obj);
+			//return ref_table.indexOf(obj);
+            return indexOfWeakMap(ref_table, obj);
 		},
 		get_ref: function(index){
 			return ref_table[index];
@@ -83,9 +97,11 @@ var $fsm = (function() {
 			//	console.log(symbols[i], ref_table[symbols[i]]);
 			//}
 
-			for (var i = 0; i < ref_table.length; i++) {
+			//for (var i = 0; i < ref_table.length; i++) {
+			for (var i = 0; i < lengthOfWeakMap(ref_table); i++) {
 				console.log('ref_table[' + i + ']');
-				for (var key in ref_table) {
+				//for (var key in ref_table) {
+				for (let key in Object.keys(ref_table)) {
 					console.log(key, ref_table[key]);
 				}
 			}
@@ -560,15 +576,17 @@ var $fsm = (function() {
 			}
 
 			function lookup(obj){
-				for(var i = 0; i < ref_table.length; i++){
-					if(obj == ref_table[i])return i;
+				//for(var i = 0; i < ref_table.length; i++){
+				for (let i = 0; i < lengthOfWeakMap(ref_table); i++) {
+					if(obj == ref_table[i]) return i;
 				}
 				return -1;
 			}
 
 			function lookupFunction(func, evt){
 				if(evt == "evt"){
-					for(var i = 0; i < ref_table.length; i++){
+					//for(var i = 0; i < ref_table.length; i++){
+                    for (let i = 0; i < lengthOfWeakMap(ref_table); i++) {
 						var index = -1;
 						if(ref_table[i].$evt_func)index = ref_table[i].$evt_func.indexOf(func);
 						if(index > -1)return [i, "$evt_func", index];
@@ -579,7 +597,8 @@ var $fsm = (function() {
 					}
 					return [-1];
 				}
-				for(var i = 0; i < ref_table.length; i++){
+				//for(var i = 0; i < ref_table.length; i++){
+                for (let i = 0; i < lengthOfWeakMap(ref_table); i++) {
 					if(func == ref_table[i].$ret_func)return [i, "$ret_func"];
 					for(var j in ref_table[i]){
 						if(func === ref_table[i][j])return [i, j];
@@ -620,7 +639,8 @@ var $fsm = (function() {
 			code += "// Restore Reference Table \n";
 
 			code += "(function(){\n";
-			for(var i = 1; i < ref_table.length; i++){
+			//for(var i = 1; i < ref_table.length; i++){
+            for (let i = 1; i < lengthOfWeakMap(ref_table); i++) {
 				var new_fsm = "$fsm" + i;
 				code += "\tvar " + new_fsm + " = $fsm.create();\n";
 				code += "\t" + iterativeStringify(ref_table[i], new_fsm, true) + ";\n";
@@ -695,7 +715,8 @@ var $fsm = (function() {
 				}
 			}
 			code += "})();\n\n";
-			for(var i = 1; i < ref_table.length; i++){
+			//for(var i = 1; i < ref_table.length; i++){
+            for (let i = 1; i < lengthOfWeakMap(ref_table); i++) {
 				for(var prop in ref_table[i]){
 					if(ref_table[i][prop])delete ref_table[i][prop].isRestored;
 				}
