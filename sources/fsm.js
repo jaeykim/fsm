@@ -326,14 +326,16 @@ var $fsm = (function() {
 						}
 						stringified += temp_stringified;
 						workList.push([currentObj.prototype, currentName + ".prototype"]);
-						workList.push([currentObj.__proto__, currentName + ".__proto__"]);
+                        if (Object.keys(currentObj.__proto__).length > 0)
+                            workList.push([currentObj.__proto__, currentName + ".__proto__"]);
 						for(var prop in currentObj){
 							if(currentObj.hasOwnProperty(prop))workList.push([currentObj[prop], currentName + "[\"" + prop + "\"]"]);
 						}
 					}
 					else if(currentObj instanceof Array){
-						stringified += currentName + " = [];\n";
-						workList.push([currentObj.__proto__, currentName + ".__proto__"]);
+                        stringified += currentName + " = [];\n";
+                        if (Object.keys(currentObj.__proto__).length > 0)
+						    workList.push([currentObj.__proto__, currentName + ".__proto__"]);
 						for(var prop in currentObj){
 							if(currentObj.hasOwnProperty(prop))workList.push([currentObj[prop], currentName + "[\"" + prop + "\"]"]);
 						}
@@ -387,8 +389,9 @@ var $fsm = (function() {
 							if(currentNames[currentNames.length - 1] != 'prototype')
 								stringified += currentName + " = {};\n";
 						}
-						else fsm_start = false;
-						workList.push([currentObj.__proto__, currentName + ".__proto__"]);
+                        else fsm_start = false;
+                        if (Object.keys(currentObj.__proto__).length > 0)
+						    workList.push([currentObj.__proto__, currentName + ".__proto__"]);
 						for(var prop in currentObj){
 							if(currentObj.hasOwnProperty(prop)){
 								workList.push([currentObj[prop], currentName + "[\"" + prop + "\"]"]);
